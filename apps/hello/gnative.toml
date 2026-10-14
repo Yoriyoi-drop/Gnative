@@ -1,0 +1,9 @@
+[project]
+name = "hello"
+version = "0.1.0"
+
+[gnative]
+version = "0.1.0"
+
+[dependencies]
+"@gnative/ui" = "0.1.0"

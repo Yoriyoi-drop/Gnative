@@ -1,0 +1,14 @@
+[package]
+name = "gnative-cli"
+version = "0.1.0"
+edition = "2021"
+description = "Perintah CLI Gnative: new, build, run, check, clean, graph, doctor, container."
+
+[features]
+default = []
+cuda = []
+
+[dependencies]
+gnative-core = { path = "../gnative-core" }
+gnative-compiler = { path = "../gnative-compiler" }
+gnative-lang = { path = "../gnative-lang" }

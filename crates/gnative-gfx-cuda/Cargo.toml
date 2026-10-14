@@ -1,0 +1,15 @@
+[package]
+name = "gnative-gfx-cuda"
+version = "0.1.0"
+edition = "2021"
+description = "Backend rendering CUDA (FALLBACK) untuk Gnative. Feature-gated: butuh driver + toolkit CUDA."
+
+[features]
+default = []
+# Aktifkan backend CUDA nyata. Tanpa fitur ini, kode tetap terkompilasi
+# dan `CudaRenderer::new()` mengembalikan BackendUnavailable.
+cuda = []
+
+[dependencies]
+gnative-core = { path = "../gnative-core" }
+gnative-gfx = { path = "../gnative-gfx" }

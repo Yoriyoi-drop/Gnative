@@ -1,0 +1,20 @@
+// @gnative/ui — runtime UI Gnative.
+//
+// REWRITE: runtime ditulis ulang dalam bahasa .gn (bukan Rust).
+// Dikompilasi bersama project oleh pipeline native yang sama
+// (AST → Semantic IR → MIR → Cranelift/LLVM → linker → binary).
+//
+// Milestone 0.8 — native codegen:
+//   - `puts(text)`   → intrinsik compiler, dipetakan ke libc `puts`
+//                      (headless render: scene dicetak sebagai teks).
+//   - Elemen built-in `<text>`, `<button>`, `<input>`, `<vstack>`
+//     dikenali compiler dan di-lower ke MIR.
+//   - Fungsi user (`function ...`) dikompilasi nyata ke MIR → Cranelift.
+//
+// Roadmap 0.9+: `state` komponen (mutasi + re-render), event, layout
+// ditulis lengkap di sini dalam .gn. Komponen user (tanpa state) sudah
+// diekspansi compile-time oleh compiler.
+
+/// Intrinsik: cetak baris teks ke stdout (libc `puts`).
+/// Compiler mengenali fungsi ini dan memetakannya ke symbol `puts`.
+function puts(text: string): void {}

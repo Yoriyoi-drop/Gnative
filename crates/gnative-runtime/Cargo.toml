@@ -1,0 +1,20 @@
+[package]
+name = "gnative-runtime"
+version = "0.1.0"
+edition = "2021"
+description = "Runtime Gnative: window winit, event loop, pemilihan backend (wgpu → cuda), dan intrinsik C-ABI yang dipanggil binary hasil kompiler .gn."
+
+# Staticlib agar bisa di-link oleh driver C bersama object hasil kompiler .gn.
+[lib]
+crate-type = ["rlib", "staticlib"]
+
+[features]
+default = []
+cuda = ["gnative-gfx-cuda/cuda"]
+
+[dependencies]
+gnative-core = { path = "../gnative-core" }
+gnative-gfx = { path = "../gnative-gfx" }
+gnative-gfx-wgpu = { path = "../gnative-gfx-wgpu" }
+gnative-gfx-cuda = { path = "../gnative-gfx-cuda" }
+winit = "0.30"

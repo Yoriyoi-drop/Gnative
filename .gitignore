@@ -1,0 +1,17 @@
+/target
+Cargo.lock
+*.swp
+.idea/
+.vscode/
+/generated
+/apps/gn/generated
+/apps/*/generated
+
+# Gnative container world — artifact build (lihat DESIGN.md §6)
+/container/generated/
+/container/cache/
+/container/graph/
+/container/metadata/
+/container/packages/@project/
+**/container/artifacts/
+**/container/cache/

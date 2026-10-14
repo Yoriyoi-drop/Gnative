@@ -1,0 +1,8 @@
+[package]
+name = "gnative-gfx"
+version = "0.1.0"
+edition = "2021"
+description = "Abstraksi rendering Gnative: trait RenderBackend, Scene, FrameStats. Ringan — hanya bergantung gnative-core."
+
+[dependencies]
+gnative-core = { path = "../gnative-core" }

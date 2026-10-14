@@ -1,0 +1,33 @@
+// src/main.gn — contoh project Gnative
+use "@gnative/ui";
+
+// Fungsi nyata: params + return, dikompilasi ke MIR → Cranelift.
+function status_label(count: number): string {
+  if (count > 0) {
+    return "aktif";
+  }
+  return "pasif";
+}
+
+function sum(): number {
+  let total: number = 0;
+  for (n of [1, 2, 3, 4, 5]) {
+    total = total + n;
+  }
+  return total;
+}
+
+function title_text(): string {
+  return "Halo Gnative 👋";
+}
+
+window App {
+  title: title_text();
+  size: [800, 600];
+  root: <vstack gap={16}>
+    <text content={title_text()} size={32} />
+    <text content={status_label(sum())} size={16} />
+    <button label="Klik Saya" />
+    <input placeholder="Klik lalu ketik di sini..." />
+  </vstack>;
+}

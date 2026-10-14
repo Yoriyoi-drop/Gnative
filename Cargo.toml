@@ -1,0 +1,35 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/gnative-core",
+    "crates/gnative-lang",
+    "crates/gnative-compiler",
+    "crates/gnative-gfx",
+    "crates/gnative-gfx-wgpu",
+    "crates/gnative-gfx-cuda",
+    "crates/gnative-runtime",
+    "crates/gnative-cli",
+]
+
+[package]
+name = "gnative"
+version = "0.1.0"
+edition = "2021"
+description = "Gnative — GUI framework native. Tulis UI ala TypeScript (.gn) → kompiler native (.gn → IR → MIR → Cranelift/LLVM → binary), render wgpu (primary) / CUDA (fallback)."
+
+[dependencies]
+gnative-cli = { path = "crates/gnative-cli" }
+
+# Fitur `cuda` diteruskan ke seluruh toolchain; libruntime CUDA di-build
+# dengan `cargo build -p gnative-runtime --features cuda`.
+[features]
+default = []
+cuda = ["gnative-cli/cuda"]
+
+# Profil dev yang masuk akal untuk project kompiler + GUI.
+[profile.dev]
+opt-level = 1
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

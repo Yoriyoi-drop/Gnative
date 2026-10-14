@@ -1,0 +1,87 @@
+// apps/hello/src/main.gn
+// Contoh project Gnative: UI deklaratif ala TypeScript, dikompilasi native.
+// Milestone 0.8: fungsi, `if`, `for`, `let`, dan ekspresi dikompilasi ke
+// MIR → Cranelift → object → linker → binary native.
+use "@gnative/ui";
+
+// Fungsi nyata: params + return + ekspresi aritmatika.
+function add(a: number, b: number): number {
+  return a + b;
+}
+
+// Fungsi dengan `if` dan perbandingan relasional (`>`, `>=`, `<`, `<=`).
+function status_label(count: number): string {
+  if (count >= 10) {
+    return "banyak";
+  }
+  if (count > 0) {
+    return "aktif";
+  }
+  return "pasif";
+}
+
+// Fungsi dengan `let` + `for (x of [...])` + `if`.
+function sum_status(): string {
+  let total: number = 0;
+  for (n of [1, 2, 3, 4, 5]) {
+    total = total + n;
+  }
+  if (total > 10) {
+    return "sum(1..5) besar (>10)";
+  }
+  return "sum(1..5) kecil";
+}
+
+function title_text(): string {
+  return "Halo Gnative 👋";
+}
+
+// Concat string literal: `"a" + "b"` → folding konstanta di compiler.
+function subtitle(): string {
+  return "status: " + "aktif";
+}
+
+// Komponen user: `<Badge label=... />` diekspansi compile-time —
+// `props.label` disubstitusi nilai atribut, tanpa overhead runtime.
+component Badge {
+  render(): Element {
+    return <text content={props.label} size={props.size} />;
+  }
+}
+
+// Komponen stateful + interaktif: klik tombol memanggil method,
+// state berubah, scene dibangun ulang dan digambar lagi.
+// Bisa dipakai banyak instance (state terpisah) + terima props.
+component Counter {
+  state { count: number = 0; pesan: string = "mati"; }
+  render(): Element {
+    return <vstack gap={8}>
+      <text content={props.judul} size={18} />
+      <text content={this.pesan} size={18} />
+      <button label="Saklar" onClick={this.saklar} />
+    </vstack>;
+  }
+  saklar(): void {
+    if (pesan == "mati") {
+      pesan = "nyala";
+    } else {
+      pesan = "mati";
+    }
+  }
+  inc(): void { count += 1; }
+}
+
+window App {
+  title: title_text();
+  size: [800, 600];
+  root: <vstack gap={16}>
+    <text content={title_text()} size={32} />
+    <text content={subtitle()} size={16} />
+    <text content={sum_status()} size={16} />
+    <Badge label="komponen: halo" size={18} />
+    <Counter judul="saklar satu" />
+    <Counter judul="saklar dua" />
+    <button label="Klik Saya" />
+    <input placeholder="Klik lalu ketik di sini..." />
+  </vstack>;
+}

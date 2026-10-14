@@ -1,0 +1,7 @@
+[package]
+name = "gnative-core"
+version = "0.1.0"
+edition = "2021"
+description = "Tipe dasar Gnative: geometri, warna, unit, event, error. Tanpa dependency eksternal."
+
+[dependencies]

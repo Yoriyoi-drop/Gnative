@@ -1,0 +1,13 @@
+[package]
+name = "gnative-gfx-wgpu"
+version = "0.1.0"
+edition = "2021"
+description = "Backend rendering wgpu (PRIMARY) untuk Gnative: device, surface, shader, renderer."
+
+[dependencies]
+gnative-core = { path = "../gnative-core" }
+gnative-gfx = { path = "../gnative-gfx" }
+wgpu = "30"
+winit = "0.30"
+pollster = "0.3"
+bytemuck = { version = "1", features = ["derive"] }

@@ -1,0 +1,15 @@
+[package]
+name = "gnative-compiler"
+version = "0.1.0"
+edition = "2021"
+description = "Kompiler Gnative: .gn → .rs. Config, resolve, graph, fingerprint, cache, codegen, pipeline."
+
+[dependencies]
+cranelift-codegen = { version = "0.134.3", features = ["all-native-arch"] }
+cranelift-frontend = "0.134"
+cranelift-module = "0.134.3"
+cranelift-native = "0.134.3"
+cranelift-object = "0.134.3"
+gnative-core = { path = "../gnative-core" }
+gnative-lang = { path = "../gnative-lang" }
+toml = "0.8"
