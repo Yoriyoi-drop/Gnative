@@ -1103,6 +1103,14 @@ fn expand_component(
             el.tag, el.tag
         ));
     }
+    // Penjaga siklus stateless (P0-03): `A → B → A` wajib error, bukan
+    // rekursi tak berujung. Cermin guard `lower_instance` untuk stateful.
+    if ictx.expanding.contains(&el.tag) {
+        return Err(format!(
+            "siklus komponen `{}` (render memuat dirinya sendiri)",
+            ictx.expanding.join(" → ") + " → " + &el.tag
+        ));
+    }
     let render = template
         .render_expr
         .as_ref()
@@ -1116,7 +1124,11 @@ fn expand_component(
         .collect();
     let substituted =
         substitute_props(render, &props).map_err(|m| format!("komponen `{}`: {m}", el.tag))?;
-    expr_node(&substituted, components, defs, ictx)
+    ictx.expanding.push(el.tag.clone());
+    // Jangan pakai `?` sebelum `pop` — stack guard harus dibersihkan di semua jalur.
+    let node = expr_node(&substituted, components, defs, ictx);
+    ictx.expanding.pop();
+    node
 }
 
 /// Kumpulkan nama `props.*` yang dipakai ekspresi (untuk props dummy validasi).
@@ -1595,6 +1607,37 @@ mod tests {
             }
             component B {
                 state { m: number = 0; }
+                render(): Element { return <vstack><A/></vstack>; }
+            }
+            window App { title: "x"; root: <A/>; }
+        "#;
+        let (module, _) = parse_source(src);
+        let out = lower(&module).unwrap();
+        assert!(out.diagnostics.iter().any(|d| d.contains("siklus")));
+    }
+
+    /// Regresi P0-03: siklus stateless `A ↔ B` wajib error, bukan stack overflow.
+    #[test]
+    fn siklus_stateless_ditolak() {
+        let src = r#"
+            component A {
+                render(): Element { return <vstack><B/></vstack>; }
+            }
+            component B {
+                render(): Element { return <vstack><A/></vstack>; }
+            }
+            window App { title: "x"; root: <A/>; }
+        "#;
+        let (module, _) = parse_source(src);
+        let out = lower(&module).unwrap();
+        assert!(out.diagnostics.iter().any(|d| d.contains("siklus")));
+    }
+
+    /// Regresi P0-03: self-recursion stateless wajib error.
+    #[test]
+    fn siklus_stateless_self_ditolak() {
+        let src = r#"
+            component A {
                 render(): Element { return <vstack><A/></vstack>; }
             }
             window App { title: "x"; root: <A/>; }

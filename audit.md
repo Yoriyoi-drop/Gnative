@@ -436,3 +436,12 @@ changelog + checklist G. Tanpa itu, rilis apa pun harus bukan v1.0.0.
   (fallback sentinel milik parser, cek `last()` bukan `any()`, saturating_add,
   cabang empty).
 - Status P0-01: CLOSED (sisa: audit span zero-width P1-01 terpisah).
+
+### Iterasi 2 — P0-03 guard siklus stateless (loop tick)
+- File: `crates/gnative-compiler/src/lower.rs` (`expand_component` guard
+  `expanding` cermin `lower_instance`, push/pop aman di semua jalur + komentar).
+- Test: 2 regresi baru (`siklus_stateless_ditolak` A↔B, `siklus_stateless_self_ditolak`);
+  `cargo test -p gnative-compiler siklus` 3/3 lolos.
+- Review subagent: approve; 2 low/info ditindaklanjuti sebagian (komentar guard,
+  saran test 3-node/sibling dicatat backlog).
+- Status P0-03: CLOSED.
