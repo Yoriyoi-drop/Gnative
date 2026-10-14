@@ -9,11 +9,12 @@ GUI framework native — tulis UI ala **TypeScript** (`.gn`), kompiler menghasil
 - 🔄 Backend rendering abstrak: **wgpu** (utama) → **CUDA** (fallback) — di-link sebagai libruntime.
 - ⚡ Incremental build: fingerprint + cache, hanya yang berubah yang dikompilasi ulang.
 
-> Status: **milestone 0.9 — komponen + cross-compile (parsial)**. `.gn` → binary
+> Status: **milestone 0.10 — bahasa lengkap + teks nyata**. `.gn` → binary
 > native end-to-end (window native wgpu): **fungsi + params/return**, `let`, `if`/`else`,
 > `for (x of [...])`, perbandingan lengkap (`< <= > >= == !=`), `&&`/`||`, concat string
-> literal, **komponen** (`<Badge label="x"/>` diekspansi compile-time), CLI gaya npm
-> (`install`, `dev`, `list`...), cross-compile `--target <triple>` (contoh: `apps/hello`).
+> literal, **komponen** stateless (ekspansi) + stateful (multi-instance, props,
+> `state`, `onClick` → rebuild), **`interface` penuh**, **teks nyata** (font atlas),
+> backend release **LLVM 18**, CLI gaya npm, cross-compile `--target <triple>`.
 
 ---
 
@@ -148,6 +149,7 @@ Tanpa fitur itu, backend CUDA nonaktif dan build tetap sukses di mesin mana pun.
 | 0.7 | Kompiler native: `.gn → IR → MIR → Cranelift → object → linker → binary`; hapus generate Rust; libruntime wgpu/CUDA di-link (intrinsik C-ABI); window native nyata |
 | **0.8** | **Bahasa lengkap (parsial): `function` + params/return, `let`, `if`/`else`, `for (x of [...])`, perbandingan lengkap, `&&`/`||`, concat string literal — MIR → Cranelift** |
 | **0.9** | **Komponen + ekosistem CLI: `component` diekspansi compile-time; `install`/`dev`/`list`/`init`/`test`/`publish`; cross-compile `--target` (Cranelift multi-arch)** |
-| 0.9 | Bahasa lengkap (lanjutan): `state` komponen (mutasi + re-render), `interface` penuh; backend LLVM release nyata |
+| 0.9 | Bahasa lengkap: `state` + event + multi-instance + props; `interface` penuh; backend LLVM 18 release nyata |
+| 0.10 | Teks nyata: font atlas bitmap 5x7 ASCII ganti placeholder |
 | 1.0 | CUDA penuh: kernel rasterizer, blit framebuffer, parity wgpu |
-| 1.1 | Ekosistem: registry package, hot reload, animasi, layout flex/grid, font atlas |
+| 1.1 | Ekosistem: registry package, hot reload, animasi, layout flex/grid, font vektor |

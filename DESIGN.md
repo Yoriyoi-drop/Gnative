@@ -272,7 +272,7 @@ Native Binary (container/artifacts/<name>)
 | `mir_lower.rs` | IR → MIR (window → build `__gn_build_scene` + `main` dinamis; string → pool; state per instance → `gn_state_*`; method tersalin `Comp__i__m`; klik → `gn_scene_add_button_clickable` + `gn_register_method`) |
 | `codegen/mod.rs` | dispatcher backend (Cranelift dev / LLVM release) |
 | `codegen/cranelift.rs` | MIR → object ELF via cranelift-codegen + cranelift-object (termasuk import `gn_state_*`/`gn_register_method`/`gn_window_run_dynamic`, `FuncAddr` + `CallIndirect`) |
-| `codegen/llvm.rs` | MIR → object (LLVM release; stub — butuh toolkit LLVM) |
+| `codegen/llvm.rs` | MIR → object via inkwell/LLVM 18 (optimasi agresif, multi-target): slot → alloca entry, CFG → basic block |
 | `linker.rs` | object `.gn` + libruntime → binary native via `cc` |
 | `pipeline.rs` | orkestrasi seluruh build (seed runtime, parse, IR/MIR, codegen, link) |
 
@@ -573,7 +573,7 @@ apps/hello/container/artifacts/    → hello.o + binary native hasil build
 | **0.9 — Komponen + cross-compile (parsial, saat ini)** | `component` stateless diekspansi compile-time (`<Badge label="x"/>` → render body dengan `props` disubstitusi, tanpa overhead runtime); CLI gaya npm (`init`, `install`, `list`/`ls`, `start`, `dev` watch+auto-restart, `test`, `publish` stub); cross-compile `--target <triple>` (Cranelift multi-arch). |
 | 0.9 — Stateful (saat ini) | `state` + event klik + multi-instance + props: init + baca (`gn_state_get_*`) + mutasi method tersalin per instance (`Counter__0__inc`, kunci `Counter#0`); `onClick={this.m}` → hit-test → dispatch → rebuild + redraw. Render divalidasi saat definisi (props dummy) + di-lower per situs. |
 | 0.10 — Teks (saat ini, parsial) | `interface` penuh (wajib/opsional, union literal, cek props per pemakaian); font atlas bitmap 5x7 ASCII (teks nyata ganti placeholder; non-ASCII dilewati). |
-| 0.9 — Bahasa lengkap (lanjutan) | Backend LLVM release nyata menggantikan stub. |
+| 0.9 — Bahasa lengkap (saat ini) | Backend LLVM release nyata (inkwell/LLVM 18, O-agresif, cross-target): `gnative build --release`. |
 | 1.0 — CUDA penuh | Kernel rasterizer lengkap, blit framebuffer, parity fitur dengan wgpu. |
 | 1.1 — Ekosistem | Registry package, hot reload, animasi, layout flex/grid, font vektor (pengganti bitmap 5x7). |
 
@@ -585,7 +585,7 @@ apps/hello/container/artifacts/    → hello.o + binary native hasil build
 - **Semantic IR** — representasi semantik setelah AST (sebelum MIR).
 - **MIR** — intermediate representation mesin Gnative (instruksi low-level).
 - **Cranelift** — codegen dev (murni Rust, cepat) → object file.
-- **LLVM** — codegen release (roadmap) → object file teroptimasi.
+- **LLVM** — codegen release (inkwell/LLVM 18) → object file teroptimasi.
 - **libruntime** — `libgnative_runtime.a` (staticlib Rust): window + render wgpu/CUDA,
   di-link bersama object `.gn`.
 - **Scene** — representasi renderable UI (bukan DOM).

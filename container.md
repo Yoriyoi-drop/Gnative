@@ -165,7 +165,7 @@ container/artifacts/
 ### 7.1 Object file
 
 - Dev: **Cranelift** (`codegen/cranelift.rs`) — codegen murni Rust, cepat.
-- Release: **LLVM** (`codegen/llvm.rs`) — roadmap 0.8, saat ini stub.
+- Release: **LLVM** (`codegen/llvm.rs`) — inkwell/LLVM 18, optimasi agresif.
 
 ### 7.2 Binary native
 

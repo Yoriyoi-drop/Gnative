@@ -58,7 +58,7 @@ pub fn run(_args: &[String]) -> i32 {
     }
 
     // Backend codegen.
-    println!("  codegen: Cranelift (dev, nyata) + LLVM (release, roadmap 0.9)");
+    println!("  codegen: Cranelift (dev) + LLVM 18 (release)");
 
     println!("── selesai ──");
     if ok {

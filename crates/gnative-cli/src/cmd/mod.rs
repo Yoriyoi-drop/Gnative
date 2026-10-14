@@ -61,7 +61,7 @@ Kompiler native: .gn → AST → Semantic IR → MIR → Cranelift (dev) / LLVM 
 PEMAKAIAN:
   gnative new <nama>        buat project .gn baru
   gnative build             kompilasi src/*.gn → binary native (backend Cranelift)
-  gnative build --release   mode release (backend LLVM — roadmap 0.9)
+  gnative build --release   mode release (backend LLVM 18, optimasi agresif)
   gnative build --target T  cross-compile: triple target (mis. aarch64-unknown-linux-gnu)
   gnative run               kompilasi lalu jalankan binary native
   gnative check             parse + type check saja

@@ -1,8 +1,8 @@
 //! Codegen native — MIR → object file.
 //!
 //! Dua backend:
-//! - `cranelift` (mode dev, default) — nyata, murni Rust.
-//! - `llvm` (mode release) — stub; belum diimplementasikan (roadmap).
+//! - `cranelift` (mode dev, default) — cepat, murni Rust.
+//! - `llvm` (mode release) — optimasi agresif via LLVM 18 sistem.
 //!
 //! Pola mengikuti `gnative-gfx`: trait backend + pemilihan di pipeline.
 
@@ -20,7 +20,7 @@ use crate::mir::MirModule;
 pub enum BuildMode {
     /// Backend Cranelift (cepat, murni Rust) — default.
     Dev,
-    /// Backend LLVM (optimasi maksimal) — belum diimplementasikan.
+    /// Backend LLVM (optimasi agresif, butuh LLVM 18) — release.
     Release,
 }
 

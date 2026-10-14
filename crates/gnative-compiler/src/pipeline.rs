@@ -819,4 +819,103 @@ window App { title: "x"; root: <Counter/>; }
         let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(stdout, "OK", "panggil tak-langsung harus jalan");
     }
+
+    #[test]
+    fn e2e_release_executes() {
+        // Backend LLVM nyata: logika .gn → object release → link → jalan.
+        // Butuh libruntime + LLVM 18; skip bila libruntime absen.
+        let src = r#"
+function verify(): boolean {
+  let total: number = 0;
+  for (n of [1, 2, 3, 4, 5]) {
+    total = total + n;
+  }
+  if (total == 15) {
+    return true;
+  }
+  return false;
+}
+"#;
+        let (module, diags) = gnative_lang::parse_source(src);
+        assert!(diags.is_empty(), "diagnostics: {diags:?}");
+        let out = crate::lower::lower(&module).unwrap();
+        assert!(
+            out.diagnostics.is_empty(),
+            "diagnostics: {:?}",
+            out.diagnostics
+        );
+
+        let mut mir = crate::mir_lower::lower_mir(&out.module);
+        mir.strings.push("OK".into());
+        mir.strings.push("GAGAL".into());
+        let ok_idx = mir.strings.iter().position(|s| s == "OK").unwrap();
+        let fail_idx = mir.strings.iter().position(|s| s == "GAGAL").unwrap();
+
+        let mut body: Vec<crate::mir::MirInst> = Vec::new();
+        let ok_ptr = body.len() as u32;
+        body.push(crate::mir::MirInst::StrAddr(ok_idx));
+        let call = body.len() as u32;
+        body.push(crate::mir::MirInst::Call {
+            callee: "verify".into(),
+            args: vec![],
+        });
+        let (then, els, end) = (400u32, 401u32, 402u32);
+        body.push(crate::mir::MirInst::Branch {
+            cond: call,
+            then,
+            els,
+        });
+        body.push(crate::mir::MirInst::Label(then));
+        body.push(crate::mir::MirInst::Call {
+            callee: "puts".into(),
+            args: vec![ok_ptr],
+        });
+        body.push(crate::mir::MirInst::Jump(end));
+        body.push(crate::mir::MirInst::Label(els));
+        let fail_ptr = body.len() as u32;
+        body.push(crate::mir::MirInst::StrAddr(fail_idx));
+        body.push(crate::mir::MirInst::Call {
+            callee: "puts".into(),
+            args: vec![fail_ptr],
+        });
+        body.push(crate::mir::MirInst::Jump(end));
+        body.push(crate::mir::MirInst::Label(end));
+        let zero = body.len() as u32;
+        body.push(crate::mir::MirInst::ConstBool(false));
+        body.push(crate::mir::MirInst::Ret(Some(zero)));
+        mir.funcs.push(crate::mir::MirFunc {
+            name: "main".into(),
+            params: vec![],
+            ret: crate::mir::MirTy::Bool,
+            body,
+        });
+
+        let runtime_lib = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/debug/libgnative_runtime.a");
+        if !runtime_lib.exists() {
+            eprintln!("skip e2e_release: libruntime belum di-build");
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("gnative-rel-e2e-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let object = dir.join("e2e.o");
+        crate::codegen::codegen(BuildMode::Release, None, &mir, &object).unwrap();
+        let bin = dir.join("e2e");
+        let linker = crate::linker::find_linker().expect("linker tersedia");
+        let status = std::process::Command::new(linker)
+            .arg(&object)
+            .arg(&runtime_lib)
+            .args(["-lpthread", "-ldl", "-lm"])
+            .arg("-o")
+            .arg(&bin)
+            .status()
+            .unwrap();
+        assert!(status.success(), "link dengan libruntime gagal");
+        let output = std::process::Command::new(&bin).output().unwrap();
+        assert!(output.status.success(), "binary gagal dijalankan");
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(stdout, "OK", "logika release harus benar");
+    }
 }
