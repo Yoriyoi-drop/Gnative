@@ -10,14 +10,30 @@ pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,
     pub diagnostics: Vec<Diagnostic>,
+    /// Sentinel `Eof` milik parser untuk fallback tanpa panic.
+    /// Dipakai bila `tokens` kosong (hanya via API langsung/fuzz) agar
+    /// `current`/`prev`/`bump` selalu punya referensi valid.
+    eof: Token,
 }
 
 impl Parser {
-    pub fn new(tokens: Vec<Token>) -> Self {
+    /// Buat parser dari token. Menjamin sentinel `Eof` di akhir.
+    pub fn new(mut tokens: Vec<Token>) -> Self {
+        // Jaminan defensif: selalu ada sentinel `Eof` di akhir walau lexer
+        // dipanggil dengan cara tak standar (mis. vektor kosong dari test/fuzz).
+        // Cek elemen TERAKHIR (bukan `any`) agar `Eof` tengah tidak menipu.
+        let need_eof = !tokens.last().is_some_and(|t| t.is(&TokenKind::Eof));
+        if need_eof {
+            tokens.push(Token::new(
+                TokenKind::Eof,
+                crate::span::Span::default(),
+            ));
+        }
         Self {
             tokens,
             pos: 0,
             diagnostics: Vec::new(),
+            eof: Token::new(TokenKind::Eof, crate::span::Span::default()),
         }
     }
 
@@ -491,7 +507,7 @@ impl Parser {
             if self.eat(&TokenKind::Else).is_some() {
                 if self.eat(&TokenKind::If).is_some() {
                     // else-if: parse sebagai If bersarang.
-                    self.pos -= 1;
+                    self.pos = self.pos.saturating_sub(1);
                 }
                 self.eat(&TokenKind::LBrace);
                 else_branch = self.parse_stmts_until_rbrace();
@@ -836,12 +852,17 @@ impl Parser {
 
     // --- Utilitas token ---
 
+    /// Token saat ini; jatuh ke sentinel `Eof` milik parser bila `pos`
+    /// di ujung. Tidak pernah panic walau `pos` mencapai akhir atau
+    /// `tokens` kosong (input terpotong / API langsung).
     fn current(&self) -> &Token {
-        &self.tokens[self.pos]
+        self.tokens.get(self.pos).unwrap_or(&self.eof)
     }
 
     fn prev(&self) -> &Token {
-        &self.tokens[self.pos.saturating_sub(1)]
+        self.tokens
+            .get(self.pos.saturating_sub(1))
+            .unwrap_or(&self.eof)
     }
 
     fn peek_kind(&self) -> Option<&TokenKind> {
@@ -849,17 +870,28 @@ impl Parser {
     }
 
     fn bump(&mut self) -> &Token {
-        let t = &self.tokens[self.pos];
-        self.pos += 1;
-        t
+        // Jangan melangkah melewati sentinel `Eof`: bila sudah di akhir,
+        // jepit `pos` ke indeks `Eof` dan kembalikan `Eof` (idempoten,
+        // anti-panic input terpotong). `saturating_add` cegah overflow teoritis.
+        if self.pos.saturating_add(1) < self.tokens.len() {
+            let idx = self.pos;
+            self.pos += 1;
+            &self.tokens[idx]
+        } else if self.tokens.is_empty() {
+            &self.eof
+        } else {
+            self.pos = self.tokens.len().saturating_sub(1);
+            &self.tokens[self.pos]
+        }
     }
 
     fn at_eof(&self) -> bool {
-        self.tokens[self.pos].is(&TokenKind::Eof)
+        self.tokens.get(self.pos).is_some_and(|t| t.is(&TokenKind::Eof))
+            || self.pos >= self.tokens.len()
     }
 
     fn check(&self, kind: &TokenKind) -> bool {
-        self.tokens[self.pos].is(kind)
+        self.tokens.get(self.pos).is_some_and(|t| t.is(kind))
     }
 
     fn eat(&mut self, kind: &TokenKind) -> Option<&Token> {
@@ -974,5 +1006,35 @@ mod tests {
             }
             _ => panic!("harusnya interface"),
         }
+    }
+
+    /// Regresi P0-01: input kosong/terpotong tidak boleh panic.
+    #[test]
+    fn parse_tidak_panic_pada_input_kosong_dan_terpotong() {
+        for src in [
+            "",
+            "   ",
+            "// komentar saja",
+            "window",
+            "window App {",
+            "window App { title:",
+            "component",
+            "component C {",
+            "(((((",
+            "window App { title: \"x\";",
+        ] {
+            let tokens = crate::lexer::Lexer::new(src).tokenize();
+            let mut parser = Parser::new(tokens);
+            let _ = parser.parse_module();
+            // Tidak panic = lolos; diagnostik boleh ada.
+        }
+    }
+
+    /// Regresi P0-01: vektor token kosong (pemakaian API langsung) tetap aman.
+    #[test]
+    fn parse_token_kosong_tetap_aman() {
+        let mut parser = Parser::new(Vec::new());
+        let m = parser.parse_module();
+        assert!(m.decls.is_empty());
     }
 }
