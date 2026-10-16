@@ -667,6 +667,22 @@ changelog + checklist G. Tanpa itu, rilis apa pun harus bukan v1.0.0.
 - Status P1-12: CLOSED (config warning + build gagal bila binary None).
 - Status P1-13: CLOSED (tanpa fallback host; runtime per-target dicari).
 
+### Iterasi 14 — P1-09/10 mangling injektif + diagnostik ber-span (16 Okt 2026)
 
+- P1-09: `mir_lower.rs` menambah `escape_ident` (ganti `_` → `_5f`) dan
+  `mono_method_name` kini `format!("{}__{inst}__{}", escape_ident(comp),
+  escape_ident(method))` — pemetaan **injektif** sehingga `A_b`/`A` + metode
+  berbeda tidak lagi bertabrakan (mis. `Counter__0__inc` tetap tak berubah).
+  Test `mono_method_name_injektif`.
+- P1-10: `lower.rs` menyertakan **span deklarasi** pada tiap diagnostik
+  (`window \`{}\` [{}]`, function/const/interface/type-alias), dan
+  `pipeline.rs` menambahkan prefiks `file.display()` ke diagnostik lower
+  sehingga lokasi file:baris tidak lagi hilang.
+- Test: `mono_method_name_injektif` (mir_lower), regresi span di lower.
+  `cargo test -p gnative-compiler` 72 lolos; fmt/clippy hijau.
+- Status P1-09: CLOSED (mangling injektif — tak ada collision pada uji).
+- Status P1-10: CLOSED (diagnostik membawa span + prefiks file).
+- Catatan: **P1-05** (spec precedence + `%`) masih terbuka; akan ditangani
+  bersama klaster parser/language berikutnya.
 
 

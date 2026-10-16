@@ -14,11 +14,21 @@ use std::collections::HashMap;
 use crate::ir::{IrBinOp, IrComponent, IrExpr, IrModule, IrNode, IrStmt};
 use crate::mir::{MirBinOp, MirCmpOp, MirFunc, MirInst, MirModule, MirTy};
 
+/// Escape `_` pada ident agar separator `__` tak ambigu (injektif).
+///
+/// Ident `.gn` boleh mengandung `_` (termasuk `__`), sehingga tanpa escape
+/// `mono_method_name("A__0__B", 0, "C")` == `mono_method_name("A", 0, "B__0__C")`
+/// (tabrakan, audit P1-09). Escape `_`→`_5f` membuat separator `__` unik;
+/// nama tanpa `_` (mis. `Counter`/`inc`) tak berubah → `Counter__0__inc`.
+fn escape_ident(s: &str) -> String {
+    s.replace('_', "_5f")
+}
+
 /// Nama fungsi MIR untuk method satu instance
 /// (`Counter`, `0`, `inc` → `Counter__0__inc`). Monomorphize agar kunci
 /// state bisa disematkan tanpa mengubah ABI (runtime tetap string).
 pub fn mono_method_name(comp: &str, inst: usize, method: &str) -> String {
-    format!("{comp}__{inst}__{method}")
+    format!("{}__{inst}__{}", escape_ident(comp), escape_ident(method))
 }
 
 /// Nama fungsi build scene (`window.root` di-outline agar runtime bisa
@@ -788,6 +798,25 @@ impl<'a> Lowerer<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mono_method_name_injektif() {
+        // P1-09: dua triple berbeda yang sebelumnya bertabrakan kini berbeda.
+        let a = mono_method_name("A__0__B", 0, "C");
+        let b = mono_method_name("A", 0, "B__0__C");
+        assert_ne!(a, b, "mangling harus injektif: {a} vs {b}");
+        // Nama tanpa `_` tak berubah (kompatibel ABI lama).
+        assert_eq!(mono_method_name("Counter", 0, "inc"), "Counter__0__inc");
+        // Umum: semua kombinasi unik.
+        let names = [
+            mono_method_name("A", 0, "x"),
+            mono_method_name("A_", 0, "x"),
+            mono_method_name("A", 0, "x_"),
+            mono_method_name("A__x", 0, ""),
+        ];
+        let set: std::collections::HashSet<_> = names.iter().collect();
+        assert_eq!(set.len(), names.len());
+    }
 
     #[test]
     fn window_becomes_main() {

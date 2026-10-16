@@ -260,7 +260,13 @@ fn collect_and_lower(project_dir: &Path, target: Option<&str>) -> GnResult<(Pars
         if !out.diagnostics.is_empty() {
             report.has_errors = true;
         }
-        report.diagnostics.extend(out.diagnostics.iter().cloned());
+        // P1-10: sertakan file pada diagnostic lowering (sebelumnya tanpa
+        // konteks file) — span deklarasi sudah ada di pesan lower.
+        report.diagnostics.extend(
+            out.diagnostics
+                .iter()
+                .map(|d| format!("{}: {}", file.display(), d)),
+        );
         if let Some(window) = out.module.window {
             // P1-06/P1-11: multi-window tidak didukung — jangan timpa diam.
             if ir.window.is_some() {

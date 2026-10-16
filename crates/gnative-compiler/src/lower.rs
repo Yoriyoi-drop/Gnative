@@ -184,7 +184,9 @@ pub fn lower(module: &Module) -> GnResult<LowerOutput> {
             Decl::Window(w) => {
                 match lower_window(w, &stateless_components, &stateful_defs, &mut ictx) {
                     Ok(window) => out.module.window = Some(window),
-                    Err(e) => out.diagnostics.push(format!("window `{}`: {e}", w.name)),
+                    Err(e) => out
+                        .diagnostics
+                        .push(format!("window `{}` [{}]: {e}", w.name, w.span)),
                 }
             }
             Decl::Function(f) => {
@@ -194,7 +196,8 @@ pub fn lower(module: &Module) -> GnResult<LowerOutput> {
                 match lower_function(f) {
                     Ok(func) => out.module.funcs.push(func),
                     Err(e) => {
-                        out.diagnostics.push(format!("fungsi `{}`: {e}", f.name));
+                        out.diagnostics
+                            .push(format!("fungsi `{}` [{}]: {e}", f.name, f.span));
                     }
                 }
             }
@@ -206,20 +209,20 @@ pub fn lower(module: &Module) -> GnResult<LowerOutput> {
                 // (bukan diam → rujukan jadi LoadVar 0). Rujukan ke const akan
                 // tetap gagal build dengan pesan ini.
                 out.diagnostics.push(format!(
-                    "const `{}` belum didukung oleh codegen native (nilai diabaikan)",
-                    c.name
+                    "const `{}` [{}] belum didukung oleh codegen native (nilai diabaikan)",
+                    c.name, c.span
                 ));
             }
             Decl::Interface(i) => {
                 out.diagnostics.push(format!(
-                    "interface `{}` belum didukung codegen native (hanya dipakai validasi props)",
-                    i.name
+                    "interface `{}` [{}] belum didukung codegen native (hanya dipakai validasi props)",
+                    i.name, i.span
                 ));
             }
             Decl::TypeAlias(t) => {
                 out.diagnostics.push(format!(
-                    "type-alias `{}` belum didukung codegen native",
-                    t.name
+                    "type-alias `{}` [{}] belum didukung codegen native",
+                    t.name, t.span
                 ));
             }
         }
