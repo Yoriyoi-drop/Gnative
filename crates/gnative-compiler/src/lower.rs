@@ -197,7 +197,27 @@ pub fn lower(module: &Module) -> GnResult<LowerOutput> {
             Decl::Component(_) => {
                 // Sudah diproses di pass 1
             }
-            Decl::Interface(_) | Decl::TypeAlias(_) | Decl::Const(_) => {}
+            Decl::Const(c) => {
+                // Const belum didukung codegen native: laporkan error jelas
+                // (bukan diam → rujukan jadi LoadVar 0). Rujukan ke const akan
+                // tetap gagal build dengan pesan ini.
+                out.diagnostics.push(format!(
+                    "const `{}` belum didukung oleh codegen native (nilai diabaikan)",
+                    c.name
+                ));
+            }
+            Decl::Interface(i) => {
+                out.diagnostics.push(format!(
+                    "interface `{}` belum didukung codegen native (hanya dipakai validasi props)",
+                    i.name
+                ));
+            }
+            Decl::TypeAlias(t) => {
+                out.diagnostics.push(format!(
+                    "type-alias `{}` belum didukung codegen native",
+                    t.name
+                ));
+            }
         }
     }
 
@@ -1873,5 +1893,20 @@ mod tests {
             out.diagnostics
         );
         assert_eq!(out.module.funcs.len(), 4);
+    }
+
+    // --- P1-08: const/interface/type-alias tidak lagi dihilangkan diam ---
+
+    #[test]
+    fn const_interface_typealias_dilaporkan() {
+        let src = "const PI = 3.14; type Alias = number; interface Props { x: number; }";
+        let (module, _) = parse_source(src);
+        let out = lower(&module).unwrap();
+        let joined = out.diagnostics.join(" ");
+        assert!(
+            joined.contains("belum didukung"),
+            "deklarasi const/interface/type-alias tidak boleh dihilangkan diam, diagnostics: {:?}",
+            out.diagnostics
+        );
     }
 }

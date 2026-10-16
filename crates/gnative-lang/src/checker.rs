@@ -68,6 +68,7 @@ impl Checker {
     pub fn check(&self, module: &mut Module, out: &mut Vec<Diagnostic>) {
         // Pass 1: kumpulkan nama.
         let mut checker = Self::new();
+        let mut window_seen = false;
         for decl in &module.decls {
             match decl {
                 Decl::Interface(i) => {
@@ -83,11 +84,25 @@ impl Checker {
                             .insert(c.name.clone(), props.clone());
                     }
                 }
-                Decl::Function(f) => checker.declare_function(&f.name, f.span, out),
                 Decl::Const(c) => {
-                    checker.const_names.insert(c.name.clone());
+                    if !checker.const_names.insert(c.name.clone()) {
+                        out.push(Diagnostic::error(
+                            c.span,
+                            format!("const `{}` dideklarasikan dua kali", c.name),
+                        ));
+                    }
                 }
-                _ => {}
+                Decl::Window(w) => {
+                    if window_seen {
+                        out.push(Diagnostic::error(
+                            w.span,
+                            "hanya satu `window` yang diizinkan per project".into(),
+                        ));
+                    } else {
+                        window_seen = true;
+                    }
+                }
+                Decl::Function(f) => checker.declare_function(&f.name, f.span, out),
             }
         }
         // Pass 2: validasi isi.
@@ -114,10 +129,10 @@ impl Checker {
                                 ),
                             ));
                         }
-                        checker.check_type(&field.ty, out);
+                        checker.check_type(&field.ty, field.span, out);
                     }
                 }
-                Decl::TypeAlias(t) => checker.check_type(&t.ty, out),
+                Decl::TypeAlias(t) => checker.check_type(&t.ty, t.span, out),
                 _ => {}
             }
         }
@@ -145,13 +160,20 @@ impl Checker {
     /// didaftarkan sebagai variabel lokal sehingga rujukan tak dikenal
     /// terdeteksi (P0-02).
     fn check_function(&mut self, f: &FunctionDecl, out: &mut Vec<Diagnostic>) {
+        let mut seen_params = HashSet::new();
         for p in &f.params {
+            if !seen_params.insert(p.name.clone()) {
+                out.push(Diagnostic::error(
+                    p.span,
+                    format!("parameter `{}` duplikat di fungsi `{}`", p.name, f.name),
+                ));
+            }
             if let Some(t) = &p.ty {
-                self.check_type(t, out);
+                self.check_type(t, p.span, out);
             }
         }
         if let Some(ret) = &f.ret {
-            self.check_type(ret, out);
+            self.check_type(ret, f.span, out);
         }
         self.scope_push();
         for p in &f.params {
@@ -178,6 +200,26 @@ impl Checker {
     }
 
     fn check_component(&mut self, c: &ComponentDecl, out: &mut Vec<Diagnostic>) {
+        let mut seen_state = HashSet::new();
+        for s in &c.state {
+            if !seen_state.insert(s.name.clone()) {
+                out.push(Diagnostic::error(
+                    s.span,
+                    format!("field state `{}` duplikat di komponen `{}`", s.name, c.name),
+                ));
+            }
+            // Validasi tipe field state (P1-07: validasi penuh, berlokasi).
+            self.check_type(&s.ty, s.span, out);
+        }
+        let mut seen_methods = HashSet::new();
+        for m in &c.methods {
+            if !seen_methods.insert(m.name.clone()) {
+                out.push(Diagnostic::error(
+                    m.span,
+                    format!("method `{}` duplikat di komponen `{}`", m.name, c.name),
+                ));
+            }
+        }
         if let Some(props) = &c.props_type {
             if !self.type_names.contains(props) {
                 out.push(Diagnostic::error(
@@ -193,7 +235,7 @@ impl Checker {
         }
         for method in &c.methods {
             if let Some(ret) = &method.ret {
-                self.check_type(ret, out);
+                self.check_type(ret, method.span, out);
             }
             // Scope method: param + field state (akses bare) + `props`/`this`.
             self.scope_push();
@@ -306,9 +348,14 @@ impl Checker {
                 }
                 self.scope_pop();
             }
-            Stmt::Let { name, ty, init, .. } => {
+            Stmt::Let {
+                name,
+                ty,
+                init,
+                span,
+            } => {
                 if let Some(t) = ty {
-                    self.check_type(t, out);
+                    self.check_type(t, *span, out);
                 }
                 if let Some(e) = init {
                     self.check_expr(e, out);
@@ -420,7 +467,7 @@ impl Checker {
             Expr::Arrow { params, body, .. } => {
                 for p in params {
                     if let Some(t) = &p.ty {
-                        self.check_type(t, out);
+                        self.check_type(t, p.span, out);
                     }
                 }
                 self.scope_push();
@@ -444,33 +491,33 @@ impl Checker {
         }
     }
 
-    fn check_type(&self, t: &crate::ty::Type, out: &mut Vec<Diagnostic>) {
+    fn check_type(&self, t: &crate::ty::Type, span: crate::span::Span, out: &mut Vec<Diagnostic>) {
         use crate::ty::Type as T;
         match t {
             T::Named(name) if !self.type_names.contains(name) => {
                 out.push(Diagnostic::error(
-                    crate::span::Span::default(),
+                    span,
                     format!("tipe `{name}` tidak dikenal"),
                 ));
             }
             T::Generic { name, args } => {
                 if !self.type_names.contains(name) {
                     out.push(Diagnostic::error(
-                        crate::span::Span::default(),
+                        span,
                         format!("tipe generik `{name}` tidak dikenal"),
                     ));
                 }
                 for a in args {
-                    self.check_type(a, out);
+                    self.check_type(a, span, out);
                 }
             }
             T::Union(parts) => {
                 for p in parts {
-                    self.check_type(p, out);
+                    self.check_type(p, span, out);
                 }
             }
             T::Array(inner) | T::Fn { ret: inner, .. } => {
-                self.check_type(inner, out);
+                self.check_type(inner, span, out);
             }
             _ => {}
         }
@@ -723,5 +770,81 @@ mod tests {
         let src = "function f(): number { let t: number = 0; for (n of [1, 2]) { t = t + n; } return t; }";
         let (_, diags) = parse_source(src);
         assert!(diags.is_empty(), "diagnostics: {diags:?}");
+    }
+
+    // --- P1-06: deteksi duplikat menyeluruh ---
+
+    #[test]
+    fn multi_window_ditolak() {
+        let src = r#"
+            window A { title: "a"; root: <text content="x"/>; }
+            window B { title: "b"; root: <text content="y"/>; }
+        "#;
+        let (_, diags) = parse_source(src);
+        assert!(
+            diags.iter().any(|d| d.message.contains("hanya satu")),
+            "dua window harus ditolak, diags: {diags:?}"
+        );
+    }
+
+    #[test]
+    fn const_duplikat_ditolak() {
+        let src = "const X = 1; const X = 2;";
+        let (_, diags) = parse_source(src);
+        assert!(diags.iter().any(|d| d.message.contains("dua kali")));
+    }
+
+    #[test]
+    fn state_field_duplikat_ditolak() {
+        let src = r#"
+            component C {
+                state { n: number = 0; n: number = 1; }
+                render(): Element { return <text content={this.n} />; }
+            }
+        "#;
+        let (_, diags) = parse_source(src);
+        assert!(diags.iter().any(|d| d.message.contains("duplikat")));
+    }
+
+    #[test]
+    fn method_duplikat_ditolak() {
+        let src = r#"
+            component C {
+                render(): Element { return <text content="x"/>; }
+                render(): Element { return <text content="y"/>; }
+            }
+        "#;
+        let (_, diags) = parse_source(src);
+        assert!(diags.iter().any(|d| d.message.contains("duplikat")));
+    }
+
+    #[test]
+    fn param_duplikat_ditolak() {
+        let src = "function f(a: number, a: number): number { return a; }";
+        let (_, diags) = parse_source(src);
+        assert!(diags.iter().any(|d| d.message.contains("duplikat")));
+    }
+
+    // --- P1-07: error tipe selalu berlokasi (bukan Span::default) ---
+
+    #[test]
+    fn error_tipe_tak_dikenal_berlokasi() {
+        let src = r#"
+            component C {
+                state { x: number = 0; y: TidakAda = 0; }
+                render(): Element { return <text content={this.x} />; }
+            }
+        "#;
+        let (_, diags) = parse_source(src);
+        let d = diags
+            .iter()
+            .find(|d| d.message.contains("TidakAda"))
+            .expect("harus ada diagnostic tipe tak dikenal");
+        // Lokasi nyata (byte offset > 0), bukan Span::default() (0,0).
+        assert!(
+            d.span.start > 0,
+            "error tipe harus berlokasi, span={}",
+            d.span
+        );
     }
 }

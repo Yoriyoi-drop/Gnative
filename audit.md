@@ -513,3 +513,25 @@ changelog + checklist G. Tanpa itu, rilis apa pun harus bukan v1.0.0.
   `cargo clippy -D warnings` hijau.
 - Status P1-01/02/03/04: CLOSED (lexer/parser tidak lagi diam pada input cacat;
   span presisi byte; angka/string cacat → error).
+
+### Iterasi 7 — P1-06/07/08 duplikat/props/const (16 Okt 2026)
+- File: `crates/gnative-lang/src/checker.rs` + `crates/gnative-compiler/src/lower.rs`.
+  - **P1-06**: deteksi duplikat menyeluruh di checker — window ganda
+    ("hanya satu window"), `const` ganda, field state ganda, method ganda,
+    param ganda (fungsi). Sebelumnya hanya function/component/type yang dicek.
+    Multi-window kini gagal build via `has_errors` di pipeline (P0-02 sudah
+    mengubah diagnostic → error).
+  - **P1-07**: `check_type` kini menerima `span` eksplisit → error tipe tak
+    dikenal berlokasi nyata (bukan `Span::default()`). Dipasang di 7 pemanggil
+    (field interface, type-alias, param fungsi, ret fungsi, ret method,
+    `let`, arrow) + validasi tipe field state komponen (validasi penuh).
+  - **P1-08**: `lower.rs` tidak lagi menjatuhkan `Const`/`Interface`/`TypeAlias`
+    diam-diam → masing-masing laporkan diagnostic "belum didukung codegen
+    native" (rujukan tak lagi jadi `LoadVar 0` tanpa kabar).
+- Test: 7 regresi baru checker (`multi_window_ditolak`, `const_duplikat_ditolak`,
+  `state_field_duplikat_ditolak`, `method_duplikat_ditolak`, `param_duplikat_ditolak`,
+  `error_tipe_tak_dikenal_berlokasi`) + 1 lower (`const_interface_typealias_dilaporkan`).
+  `cargo test` lang 41 lolos, compiler 59 lolos (tanpa regresi). `cargo fmt --check`
+  + `cargo clippy -D warnings` hijau.
+- Status P1-06/07/08: CLOSED (duplikat terdeteksi; error tipe berlokasi; deklarasi
+  tak didukung tak lagi hilang diam).
