@@ -5,13 +5,21 @@ use std::path::{Path, PathBuf};
 
 use gnative_core::{GnError, GnResult};
 
+/// Versi compiler ini — satu-satunya sumber kebenaran untuk `gnative.toml`
+/// yang dihasilkan (`[gnative].version`) dan untuk paket runtime bawaan
+/// `@gnative/ui`. Wajib dipakai agar project hasil `gnative new` selalu
+/// kompatibel dengan compiler yang membuatnya (audit: template tak boleh
+/// langsung gagal di cek versi pipeline).
+pub const COMPILER_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 /// `gnative.toml` yang sudah di-parse.
 #[derive(Debug, Clone, Default)]
 pub struct Config {
     pub project_name: String,
     pub project_version: String,
     pub gnative_version: String,
-    /// dependency: nama → versi (`@gnative/ui` → "0.1.0").
+    /// dependency: nama → versi (`@gnative/ui` → versi compiler, lihat
+    /// [`COMPILER_VERSION`]).
     pub dependencies: BTreeMap<String, String>,
     /// dev-dependency lokal (path).
     pub dev_dependencies: BTreeMap<String, String>,
@@ -63,10 +71,12 @@ impl Config {
             }
         }
         if let Some(gnative) = value.get("gnative").and_then(|v| v.as_table()) {
+            // Fallback = versi compiler sendiri: `[gnative]` ada tapi tanpa
+            // `version` tidak boleh menghasilkan mismatch major palsu.
             cfg.gnative_version = gnative
                 .get("version")
                 .and_then(|v| v.as_str())
-                .unwrap_or("0.1.0")
+                .unwrap_or(COMPILER_VERSION)
                 .to_string();
         }
         if let Some(deps) = value.get("dependencies").and_then(|v| v.as_table()) {
@@ -87,6 +97,10 @@ impl Config {
     }
 
     /// Default `gnative.toml` untuk project baru.
+    ///
+    /// `[gnative].version` dan versi paket runtime bawaan `@gnative/ui`
+    /// memakai [`COMPILER_VERSION`] — bukan konstanta hardcode — supaya project
+    /// hasil `gnative new` tidak pernah langsung gagal cek versi pipeline.
     pub fn template(name: &str) -> String {
         format!(
             r#"[project]
@@ -94,11 +108,12 @@ name = "{name}"
 version = "0.1.0"
 
 [gnative]
-version = "0.1.0"
+version = "{version}"
 
 [dependencies]
-"@gnative/ui" = "0.1.0"
-"#
+"@gnative/ui" = "{version}"
+"#,
+            version = COMPILER_VERSION
         )
     }
 }
@@ -118,8 +133,24 @@ mod tests {
         assert_eq!(cfg.project_name, "demo");
         assert_eq!(
             cfg.dependencies.get("@gnative/ui").map(String::as_str),
-            Some("0.1.0")
+            Some(COMPILER_VERSION)
         );
+    }
+
+    #[test]
+    fn template_selalu_kompatibel_dengan_compiler() {
+        // Regresi: `gnative new` tidak boleh menghasilkan project yang
+        // langsung ditolak cek versi pipeline (major berbeda).
+        let cfg = Config::parse(&Config::template("demo")).unwrap();
+        assert_eq!(cfg.gnative_version, COMPILER_VERSION);
+        let major = |v: &str| v.split('.').next().unwrap_or("").to_string();
+        assert_eq!(major(&cfg.gnative_version), major(COMPILER_VERSION));
+    }
+
+    #[test]
+    fn gnative_tanpa_version_pakai_versi_compiler() {
+        let cfg = Config::parse("[gnative]\n").unwrap();
+        assert_eq!(cfg.gnative_version, COMPILER_VERSION);
     }
 
     #[test]

@@ -103,8 +103,17 @@ Object File   Object File   Object File
 
 ```
 Gnative/
-├── Cargo.toml              # workspace root + package root (bin "gnative")
+├── Cargo.toml              # workspace root + [workspace.package] (versi/MSRV/lisensi)
 ├── DESIGN.md / AGENTS.md / README.md / container.md
+├── CHANGELOG.md            # riwayat perubahan per rilis (Keep a Changelog)
+├── SECURITY.md             # pelaporan kerentanan, batas kepercayaan, kebijakan rollback
+├── LICENSE-MIT / LICENSE-APACHE   # dual-license: MIT OR Apache-2.0
+├── Cargo.lock              # DI-COMMIT — build rilis reproducible
+├── audit.md                # audit kesiapan rilis + log remediasi
+├── ci/
+│   ├── ci.yml              # definisi GitHub Actions (fmt/clippy/check/test/provenance)
+│   ├── README.md           # cara mengaktifkan + prasyarat runner
+│   └── provenance.sh       # checksum SHA-256 + provenance artefak (lokal, tanpa publish)
 ├── src/
 │   └── main.rs             # SATU-SATUNYA file di src/ — memanggil gnative_cli
 └── crates/                 # SEMUA logika
@@ -115,10 +124,14 @@ Gnative/
     │   └── runtime/        # runtime .gn bawaan (@gnative/ui) → di-seed ke container
     ├── gnative-gfx/        # abstraksi render: trait RenderBackend, Scene, FrameStats
     ├── gnative-gfx-wgpu/   # backend wgpu (PRIMARY)
-    ├── gnative-gfx-cuda/   # backend CUDA (FALLBACK, feature-gated)
+    ├── gnative-gfx-cuda/   # backend CUDA (KERANGKA, feature-gated, di luar cakupan v1.0)
     ├── gnative-runtime/    # winit + event loop + backend select + intrinsik C-ABI
     └── gnative-cli/        # perintah CLI: new/build/run/check/clean/graph/container/doctor
 ```
+
+Metadata rilis diwariskan dari `[workspace.package]` di `Cargo.toml`
+(`version`, `edition`, `license`, `rust-version` = MSRV **1.80**) sehingga satu
+sumber kebenaran; setiap crate memakai `*.workspace = true`.
 
 ### Dependensi antar-crate
 

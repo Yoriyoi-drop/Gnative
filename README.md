@@ -11,10 +11,16 @@ GUI framework native — tulis UI ala **TypeScript** (`.gn`), kompiler menghasil
 
 > Status: **milestone 0.10 — bahasa lengkap + teks nyata**. `.gn` → binary
 > native end-to-end (window native wgpu): **fungsi + params/return**, `let`, `if`/`else`,
-> `for (x of [...])`, perbandingan lengkap (`< <= > >= == !=`), `&&`/`||`, concat string
+> `for (x of [...])`, perbandingan lengkap (`< <= > >= == !=`), `&&`/`||`, `%`, concat string
 > literal, **komponen** stateless (ekspansi) + stateful (multi-instance, props,
 > `state`, `onClick` → rebuild), **`interface` penuh**, **teks nyata** (font atlas),
 > backend release **LLVM 18**, CLI gaya npm, cross-compile `--target <triple>`.
+>
+> Rilis kandidat: **`v1.0.0-rc.1`** — seluruh temuan audit kesiapan rilis
+> (`audit.md`: P0-01..09, P1-01..16, P2-01..14, P3-01..07) telah ditutup.
+> Backend **CUDA dinyatakan kerangka / di luar cakupan v1.0** dan dipindah ke
+> roadmap 1.1 (lihat [CHANGELOG.md](CHANGELOG.md) dan [SECURITY.md](SECURITY.md)).
+> MSRV: **Rust 1.80**.
 
 ---
 
@@ -127,19 +133,42 @@ Object File   Object File   Object File
 
 ## CUDA (fallback)
 
-CUDA diaktifkan lewat fitur `cuda` — membutuhkan driver + toolkit CUDA:
+CUDA dinyatakan **kerangka / belum didukung** pada rilis ini — berada di luar
+cakupan `v1.0.0`. `CudaRenderer::new()` selalu mengembalikan
+`BackendUnavailable` dengan pesan jelas (bukan stub yang tampak berhasil).
+Rendering nyata hanya lewat **wgpu**.
+
+Fitur `cuda` tetap ada untuk pengembangan lanjutan dan membutuhkan driver +
+toolkit CUDA:
 
 ```bash
 cargo build -p gnative-runtime --features cuda
 ```
 
-Tanpa fitur itu, backend CUDA nonaktif dan build tetap sukses di mesin mana pun.
+Tanpa fitur itu, build tetap sukses di mesin mana pun.
 
 ## Dokumentasi
 
 - [DESIGN.md](DESIGN.md) — arsitektur lengkap (3 dunia, bahasa .gn, pipeline, render engine).
 - [container.md](container.md) — detail Gnative Container World (packages, cache, artifacts).
 - [AGENTS.md](AGENTS.md) — panduan untuk agen AI yang mengerjakan codebase ini.
+- [CHANGELOG.md](CHANGELOG.md) — riwayat perubahan per rilis.
+- [SECURITY.md](SECURITY.md) — pelaporan kerentanan, batas kepercayaan, kebijakan rollback.
+
+## Lisensi & rilis
+
+- Lisensi: **MIT OR Apache-2.0** (lihat [LICENSE-MIT](LICENSE-MIT) dan
+  [LICENSE-APACHE](LICENSE-APACHE)).
+- MSRV: **Rust 1.80** (`rust-version` di setiap crate).
+- `Cargo.lock` **di-commit** agar build rilis reproducible.
+- Checksum + provenance artefak rilis dibuat lokal (tanpa publikasi otomatis):
+
+```bash
+cargo build --release
+cargo build --release -p gnative-runtime
+ci/provenance.sh            # → dist/SHA256SUMS.txt + dist/PROVENANCE.txt
+sha256sum -c dist/SHA256SUMS.txt
+```
 
 ## Roadmap
 
@@ -151,5 +180,5 @@ Tanpa fitur itu, backend CUDA nonaktif dan build tetap sukses di mesin mana pun.
 | **0.9** | **Komponen + ekosistem CLI: `component` diekspansi compile-time; `install`/`dev`/`list`/`init`/`test`/`publish`; cross-compile `--target` (Cranelift multi-arch)** |
 | 0.9 | Bahasa lengkap: `state` + event + multi-instance + props; `interface` penuh; backend LLVM 18 release nyata |
 | 0.10 | Teks nyata: font atlas bitmap 5x7 ASCII ganti placeholder |
-| 1.0 | CUDA penuh: kernel rasterizer, blit framebuffer, parity wgpu |
-| 1.1 | Ekosistem: registry package, hot reload, animasi, layout flex/grid, font vektor |
+| **1.0.0-rc.1** | **Kandidat rilis: temuan audit P0/P1/P2/P3 ditutup, CI + lisensi + lock + changelog + provenance; CUDA dikeluarkan dari cakupan** |
+| 1.1 | CUDA penuh (kernel rasterizer, blit framebuffer, parity wgpu); registry package, hot reload, animasi, layout flex/grid, font vektor |

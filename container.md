@@ -109,14 +109,18 @@ Deklarasi project (nama, dependency):
 ```toml
 [project]
 name = "my-app"
-version = "0.1.0"
+version = "0.1.0"          # versi project developer sendiri
 
 [gnative]
-version = "0.7"
+version = "1.0.0-rc.1"     # versi compiler yang dibutuhkan (major harus sama)
 
 [dependencies]
-"@gnative/ui" = "0.7.0"
+"@gnative/ui" = "1.0.0-rc.1"   # paket runtime bawaan (ikut versi compiler)
 ```
+
+`[gnative].version` dan versi `@gnative/ui` diisi otomatis oleh `gnative new`
+dengan versi compiler yang menjalankannya, sehingga project baru selalu lolos
+cek versi pipeline. Major berbeda → build error; minor/patch berbeda → warning.
 
 Developer menyatakan kebutuhan secara deklaratif — bukan path file.
 

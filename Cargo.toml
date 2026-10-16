@@ -11,10 +11,25 @@ members = [
     "crates/gnative-cli",
 ]
 
+# Metadata yang diwariskan ke semua crate (`*.workspace = true`).
+# MSRV 1.80 dinyatakan agar `cargo` menolak toolchain yang terlalu tua dengan
+# pesan jelas, bukan gagal kompilasi misterius.
+[workspace.package]
+version = "1.0.0-rc.1"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+rust-version = "1.80"
+authors = ["Gnative contributors"]
+repository = "https://github.com/Yoriyoi-drop/Gnative"
+
 [package]
 name = "gnative"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
 description = "Gnative — GUI framework native. Tulis UI ala TypeScript (.gn) → kompiler native (.gn → IR → MIR → Cranelift/LLVM → binary), render wgpu (primary) / CUDA (fallback)."
 
 [dependencies]

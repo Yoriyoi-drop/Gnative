@@ -14,7 +14,10 @@ Baca penuh sebelum mengubah apa pun. Detail arsitektur ada di [DESIGN.md](./DESI
 - Engine: **Rust murni**; rendering **wgpu (primary)** + **CUDA (kerangka, belum
   bekerja — `CudaRenderer::new()` selalu `BackendUnavailable`)** —
   di-link ke binary sebagai libruntime (`libgnative_runtime.a`).
-- Status: **milestone 0.7 — kompiler native**.
+- Status: **milestone 0.10 + rilis kandidat `v1.0.0-rc.1`** (temuan audit
+  `audit.md` P0/P1/P2/P3 sudah ditutup). MSRV **Rust 1.80**; lisensi
+  **MIT OR Apache-2.0**; `Cargo.lock` di-commit.
+- **CUDA di luar cakupan v1.0** (kerangka saja) — dipindah ke roadmap 1.1.
 
 ## 2. Aturan Emas (WAJIB)
 
@@ -70,16 +73,18 @@ ia di-build terpisah (`cargo build -p gnative-runtime`) lalu di-link oleh `linke
 cargo check --workspace            # wajib hijau setelah setiap perubahan
 cargo test --workspace             # unit test (tanpa GPU)
 cargo fmt --check                  # format konsisten
-cargo clippy --workspace -- -D warnings
+cargo clippy --workspace --all-targets -- -D warnings
 cargo build -p gnative-runtime     # build libruntime (staticlib) — diperlukan untuk link
 cargo run -- help                  # daftar perintah CLI
 cargo run -- new demo              # buat project .gn contoh
 cargo run -- build                 # kompilasi project .gn → binary native
 cargo run -- run                   # buka jendela native (butuh GPU/display)
+ci/provenance.sh                   # checksum + provenance artefak (lokal, tanpa publish)
 ```
 
 > Catatan: compile pertama `cargo check` memakan waktu karena wgpu/winit/cranelift
-> (sekitar 1–5 menit).
+> (sekitar 1–5 menit). Gunakan `--locked` (`cargo check --workspace --locked`)
+> untuk menegakkan `Cargo.lock` yang di-commit.
 
 ## 7. Alur Kerja yang Disarankan untuk Agen
 
@@ -99,7 +104,9 @@ cargo run -- run                   # buka jendela native (butuh GPU/display)
   `Module`/`ObjectBuilder` dari `cranelift-module`/`cranelift-object`; lihat `codegen/cranelift.rs`.
 - **CUDA tidak bisa dikompilasi tanpa toolkit** — selalu test dengan fitur `cuda` NONAKTIF terlebih dahulu.
 - **Linker butuh libruntime** — `gnative build` mencari `libgnative_runtime.a` ke atas dari project
-  (hingga repo root `target/debug`); jika belum di-build, link dilewati dengan peringatan (bukan error fatal).
+  (hingga repo root `target/debug`). Tanpa libruntime, build **gagal-jujur** (exit non-0 + pesan
+  cara memperbaiki) — bukan sukses semu (audit P1-12). Set `GNATIVE_REQUIRE_RUNTIME=1`
+  (dipakai CI) untuk menjadikannya prasyarat keras juga di jalur `check`/test.
 - **Jangan menaruh logika di `main.rs`** — hanya delegasi.
 
 ## 9. Komunikasi

@@ -329,7 +329,7 @@ mod tests {
         let img = build_image();
         assert_eq!(img.len(), ATLAS_W * ATLAS_H * 4);
         // Piksel glyph 'A' (sel 33: kolom 1, baris 2) menyala.
-        let ax = 1 * CELL;
+        let ax = CELL;
         let ay = 2 * CELL + 3; // baris glyph 3 (penuh)
         let o = (ay * ATLAS_W + ax) * 4;
         assert_eq!(img[o + 3], 255);

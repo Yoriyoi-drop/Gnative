@@ -32,17 +32,25 @@ jobs:
       - name: Format
         run: cargo fmt --check
 
-      - name: Clippy (deny warnings)
-        run: cargo clippy --workspace -- -D warnings
+      - name: Clippy (deny warnings, termasuk kode test)
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Check workspace
-        run: cargo check --workspace
+        run: cargo check --workspace --locked
 
       - name: Build libruntime (staticlib)
         run: cargo build -p gnative-runtime
 
       - name: Test workspace
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
+
+      # Provenance/checksum harus dapat dihasilkan (tanpa publikasi artefak).
+      - name: Provenance + checksum
+        run: |
+          cargo build --release
+          cargo build --release -p gnative-runtime
+          ci/provenance.sh
+          sha256sum -c dist/SHA256SUMS.txt
 
   # Gerbang cuda tetap dibangun dengan fitur mati (default harus hijau
   # tanpa CUDA toolkit — AGENTS.md §5).
@@ -57,4 +65,4 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Check tanpa fitur cuda
-        run: cargo check --workspace
+        run: cargo check --workspace --locked

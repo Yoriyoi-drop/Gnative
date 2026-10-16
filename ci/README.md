@@ -1,8 +1,14 @@
 # CI
 
 `ci.yml` adalah definisi GitHub Actions untuk repo ini: fmt + clippy
-(`-D warnings`) + `cargo check` + build libruntime + `cargo test --workspace`
-(dengan `GNATIVE_REQUIRE_RUNTIME=1` agar test e2e tidak skip diam).
+(`-D warnings`) + `cargo check --locked` + build libruntime +
+`cargo test --workspace --locked` (dengan `GNATIVE_REQUIRE_RUNTIME=1` agar test
+e2e tidak skip diam) + build release + `ci/provenance.sh` + verifikasi checksum.
+Flag `--locked` menegakkan `Cargo.lock` yang di-commit (build reproducible).
+
+`provenance.sh` dapat dijalankan lokal untuk menghasilkan
+`dist/SHA256SUMS.txt` + `dist/PROVENANCE.txt`. Skrip **tidak** mempublikasikan
+apa pun (lihat `SECURITY.md`).
 
 ## Mengaktifkan
 

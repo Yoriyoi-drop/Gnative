@@ -1,7 +1,9 @@
 [package]
 name = "gnative-compiler"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
 description = "Kompiler Gnative: .gn → .rs. Config, resolve, graph, fingerprint, cache, codegen, pipeline."
 
 [dependencies]

@@ -521,7 +521,7 @@ mod tests {
         fn daftar() {
             unsafe {
                 gn_register_method(c"KUji".as_ptr(), c"naik".as_ptr(), handler_uji as *const ());
-                *build_fn().lock().expect("lock build") = Some(build_uji as usize);
+                *build_fn().lock().expect("lock build") = Some(build_uji as *const () as usize);
             }
         }
 
@@ -603,7 +603,7 @@ mod tests {
     fn binary_fn_tolak_null() {
         assert!(unsafe { binary_fn(0) }.is_none());
         extern "C" fn f() {}
-        let p = f as usize;
+        let p = f as *const () as usize;
         assert!(unsafe { binary_fn(p) }.is_some());
     }
 
@@ -612,7 +612,7 @@ mod tests {
         // Pointer non-null tanpa NUL dalam batas → tak panic, tak crash (P0-08).
         // Buffer sepanjang batas baca (asumsi pointer FFI valid sejauh itu).
         extern "C" fn noop() {}
-        let mut buf = vec![b'A'; MAX_CSTR_LEN];
+        let buf = vec![b'A'; MAX_CSTR_LEN];
         unsafe {
             gn_register_method(
                 buf.as_ptr() as *const c_char,

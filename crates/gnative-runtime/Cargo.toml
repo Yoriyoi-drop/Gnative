@@ -1,7 +1,9 @@
 [package]
 name = "gnative-runtime"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
 description = "Runtime Gnative: window winit, event loop, pemilihan backend (wgpu → cuda), dan intrinsik C-ABI yang dipanggil binary hasil kompiler .gn."
 
 # Staticlib agar bisa di-link oleh driver C bersama object hasil kompiler .gn.

@@ -1,5 +1,7 @@
 /target
-Cargo.lock
+# `Cargo.lock` SENGAJA di-commit: `gnative` menghasilkan binary aplikasi akhir
+# (bukan hanya library), sehingga build rilis harus reproducible (item audit
+# Tahap 5). Jangan tambahkan kembali ke .gitignore.
 *.swp
 .idea/
 .vscode/
@@ -15,3 +17,4 @@ Cargo.lock
 /container/packages/@project/
 **/container/artifacts/
 **/container/cache/
+/dist
