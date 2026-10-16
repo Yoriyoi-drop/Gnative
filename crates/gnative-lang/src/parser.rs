@@ -5,6 +5,10 @@ use crate::diagnostic::Diagnostic;
 use crate::token::{Token, TokenKind};
 use crate::ty::Type;
 
+/// Batas kedalaman rekursi ekspresi (anti stack-overflow pada input jahat
+/// seperti `(((((...` atau `!!!!!...`). Lihat audit P1-15.
+const MAX_DEPTH: usize = 256;
+
 /// Parser recursive descent untuk bahasa `.gn`.
 pub struct Parser {
     tokens: Vec<Token>,
@@ -14,6 +18,10 @@ pub struct Parser {
     /// Dipakai bila `tokens` kosong (hanya via API langsung/fuzz) agar
     /// `current`/`prev`/`bump` selalu punya referensi valid.
     eof: Token,
+    /// Kedalaman rekursi ekspresi saat ini (dibatasi `MAX_DEPTH`).
+    depth: usize,
+    /// Sudah pernah melaporkan error kedalaman (hindari banjir diagnostik).
+    depth_reported: bool,
 }
 
 impl Parser {
@@ -31,7 +39,25 @@ impl Parser {
             pos: 0,
             diagnostics: Vec::new(),
             eof: Token::new(TokenKind::Eof, crate::span::Span::default()),
+            depth: 0,
+            depth_reported: false,
         }
+    }
+
+    /// Guard kedalaman: bila `depth` melewati `MAX_DEPTH`, laporkan sekali
+    /// dan kembalikan `true` (pemanggil mengembalikan placeholder).
+    fn depth_exceeded(&mut self) -> bool {
+        if self.depth < MAX_DEPTH {
+            return false;
+        }
+        if !self.depth_reported {
+            self.diagnostics.push(Diagnostic::error(
+                self.current().span,
+                format!("ekspresi terlalu dalam (nesting > {MAX_DEPTH})"),
+            ));
+            self.depth_reported = true;
+        }
+        true
     }
 
     pub fn parse_module(&mut self) -> Module {
@@ -554,7 +580,18 @@ impl Parser {
     }
 
     fn parse_expr(&mut self) -> Expr {
-        self.parse_assign()
+        let span = self.current().span;
+        if self.depth_exceeded() {
+            // Konsumsi satu token agar pemanggil tetap maju (hindari loop).
+            if !self.at_eof() {
+                self.bump();
+            }
+            return Expr::Number(0.0, span);
+        }
+        self.depth += 1;
+        let e = self.parse_assign();
+        self.depth -= 1;
+        e
     }
 
     /// Assignment `x = v` / `x += v` / `x -= v` (right-assoc, precedence
@@ -620,9 +657,18 @@ impl Parser {
     }
 
     fn parse_unary(&mut self) -> Expr {
+        let span = self.current().span;
+        if self.depth_exceeded() {
+            if !self.at_eof() {
+                self.bump();
+            }
+            return Expr::Number(0.0, span);
+        }
         if self.check(&TokenKind::Bang) {
             let span = self.bump().span;
+            self.depth += 1;
             let operand = self.parse_unary();
+            self.depth -= 1;
             return Expr::UnOp {
                 op: UnOp::Not,
                 operand: Box::new(operand),
@@ -631,7 +677,9 @@ impl Parser {
         }
         if self.check(&TokenKind::Minus) {
             let span = self.bump().span;
+            self.depth += 1;
             let operand = self.parse_unary();
+            self.depth -= 1;
             return Expr::UnOp {
                 op: UnOp::Neg,
                 operand: Box::new(operand),
@@ -727,6 +775,11 @@ impl Parser {
                             ty,
                             span: self.prev().span,
                         });
+                    } else {
+                        // Bukan daftar param arrow (mis. `(a + b)` / `((1))`)
+                        // → berhenti; rollback di bawah mem-parse sebagai
+                        // paren biasa. Tanpa ini loop tak maju (hang).
+                        break;
                     }
                     self.eat(&TokenKind::Comma);
                 }
@@ -945,6 +998,42 @@ mod tests {
         let (tokens, _lex_diags) = crate::lexer::Lexer::new(src).tokenize();
         let mut parser = Parser::new(tokens);
         parser.parse_module()
+    }
+
+    #[test]
+    fn kedalaman_ekspresi_dibatasi() {
+        // P1-15: nesting sangat dalam tidak boleh stack-overflow; parser
+        // melaporkan diagnostik "terlalu dalam" dan tetap selesai.
+        let src = format!(
+            "function f(): number {{ return {}1{}; }}",
+            "(".repeat(2000),
+            ")".repeat(2000)
+        );
+        let (tokens, _) = crate::lexer::Lexer::new(&src).tokenize();
+        let mut parser = Parser::new(tokens);
+        let _ = parser.parse_module();
+        assert!(
+            parser
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("terlalu dalam")),
+            "harus ada diagnostik kedalaman"
+        );
+    }
+
+    #[test]
+    fn unary_dalam_dibatasi() {
+        let src = format!(
+            "function f(): boolean {{ return {}true; }}",
+            "!".repeat(2000)
+        );
+        let (tokens, _) = crate::lexer::Lexer::new(&src).tokenize();
+        let mut parser = Parser::new(tokens);
+        let _ = parser.parse_module();
+        assert!(parser
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("terlalu dalam")));
     }
 
     #[test]

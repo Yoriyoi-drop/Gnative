@@ -625,4 +625,26 @@ changelog + checklist G. Tanpa itu, rilis apa pun harus bukan v1.0.0.
 - Status P1-14: CLOSED (CI + test CLI + e2e fail bila prasyarat absen).
 - Status P1-16: CLOSED (test = grep test).
 
+### Iterasi 12 — P1-15 batas resource (16 Okt 2026)
+
+- Masalah: parser rekursif tanpa batas kedalaman; `for (x of [..])` unroll
+  penuh; `read_to_string` tanpa batas ukuran → input jahat = stack overflow/OOM.
+- Perbaikan:
+  - `parser.rs`: `MAX_DEPTH=256` + guard di `parse_expr`/`parse_unary` →
+    nesting sangat dalam menghasilkan diagnostic "terlalu dalam", bukan
+    stack overflow.
+  - **Bug laten diperbaiki**: loop lookahead arrow-function di `parse_atom`
+    tak maju (hang) bila token setelah `(` bukan Ident/RParen/Comma (mis.
+    `((1))`) — kini `break` → rollback parse sebagai paren biasa.
+  - `lower.rs`: `MAX_FOR_UNROLL=4096` → `for` dengan item lebih banyak ditolak
+    dengan diagnostic jelas (bukan unroll raksasa).
+  - `pipeline.rs`: `read_gn_file` batas `MAX_GN_FILE_BYTES=8MiB` → file `.gn`
+    raksasa ditolak dengan error jelas.
+- Test: `kedalaman_ekspresi_dibatasi`, `unary_dalam_dibatasi` (parser),
+  `for_unroll_berlebihan_ditolak` (lower). `cargo test -p gnative-lang` 42,
+  `gnative-compiler` 65 lolos; fmt/clippy hijau.
+- Status P1-15: CLOSED (batas depth/unroll/ukuran; sisa: fuzzer corpus ala
+  roadmap — dicatat).
+
+
 

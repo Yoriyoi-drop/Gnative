@@ -92,7 +92,7 @@ pub fn build_with_target(
     // Catat fingerprint setelah build sukses (cache hit berikutnya).
     for file in &parsed.gn_files {
         let rel = relative_to(file, &parsed.src_dir).unwrap_or_else(|| file.display().to_string());
-        let source = std::fs::read_to_string(file).map_err(GnError::Io)?;
+        let source = read_gn_file(file)?;
         cache.record(&rel, target, source_fingerprint(&source))?;
     }
 
@@ -191,7 +191,7 @@ fn collect_and_lower(project_dir: &Path, target: Option<&str>) -> GnResult<(Pars
 
     for file in &gn_files {
         let rel = relative_to(file, &src_dir).unwrap_or_else(|| file.display().to_string());
-        let source = std::fs::read_to_string(file).map_err(GnError::Io)?;
+        let source = read_gn_file(file)?;
         let fingerprint = source_fingerprint(&source);
 
         if cache.is_fresh(&rel, target, fingerprint) {
@@ -299,7 +299,7 @@ fn build_fingerprint(
     for file in &gn_files {
         let rel = relative_to(file, &src_dir).unwrap_or_else(|| file.display().to_string());
         h = fnv1a_seeded(h, rel.as_bytes());
-        let source = std::fs::read_to_string(file).map_err(GnError::Io)?;
+        let source = read_gn_file(file)?;
         h = fnv1a_seeded(h, source.as_bytes());
     }
     // Runtime bawaan compiler (sumber otoritatif) — invalidasi saat berubah
@@ -337,6 +337,23 @@ fn relative_to(file: &Path, base: &Path) -> Option<String> {
     file.strip_prefix(base)
         .ok()
         .map(|p| p.to_string_lossy().into_owned())
+}
+
+/// Batas ukuran satu file `.gn` (anti-OOM dari input jahat). Lihat audit P1-15.
+const MAX_GN_FILE_BYTES: u64 = 8 * 1024 * 1024;
+
+/// Baca file `.gn` dengan batas ukuran; tolak file raksasa dengan error jelas.
+fn read_gn_file(path: &Path) -> GnResult<String> {
+    let len = std::fs::metadata(path).map_err(GnError::Io)?.len();
+    if len > MAX_GN_FILE_BYTES {
+        return Err(GnError::Config(format!(
+            "file `{}` terlalu besar ({} byte > batas {} byte)",
+            path.display(),
+            len,
+            MAX_GN_FILE_BYTES
+        )));
+    }
+    std::fs::read_to_string(path).map_err(GnError::Io)
 }
 
 /// Nama file output aman (hanya alfanumerik, `-` → `_`).

@@ -22,6 +22,10 @@ pub struct LowerOutput {
     pub diagnostics: Vec<String>,
 }
 
+/// Batas jumlah item `for (x of [..])` yang di-unroll (anti-OOM/kode
+/// membengkak dari input jahat). Lihat audit P1-15.
+const MAX_FOR_UNROLL: usize = 4096;
+
 /// Template komponen stateless (ekspansi compile-time).
 struct ComponentTemplate {
     render_expr: Option<Expr>,
@@ -507,6 +511,12 @@ fn lower_stmt_with_state(
                     ));
                 }
             };
+            if items.len() > MAX_FOR_UNROLL {
+                return Err(format!(
+                    "`for ({var} of ...)` terlalu banyak ({}) — batas unroll {MAX_FOR_UNROLL}",
+                    items.len()
+                ));
+            }
             locals.insert(var.clone());
             Ok(IrStmt::For {
                 var: var.clone(),
@@ -760,6 +770,12 @@ fn lower_stmt(s: &Stmt) -> Result<IrStmt, String> {
                     ));
                 }
             };
+            if items.len() > MAX_FOR_UNROLL {
+                return Err(format!(
+                    "`for ({var} of ...)` terlalu banyak ({}) — batas unroll {MAX_FOR_UNROLL}",
+                    items.len()
+                ));
+            }
             Ok(IrStmt::For {
                 var: var.clone(),
                 items,
@@ -1906,6 +1922,26 @@ mod tests {
         assert!(
             joined.contains("belum didukung"),
             "deklarasi const/interface/type-alias tidak boleh dihilangkan diam, diagnostics: {:?}",
+            out.diagnostics
+        );
+    }
+
+    // --- P1-15: batas resource (for-unroll) ---
+
+    #[test]
+    fn for_unroll_berlebihan_ditolak() {
+        // Array literal > MAX_FOR_UNROLL → diagnostic error, bukan kode raksasa.
+        let n = MAX_FOR_UNROLL + 1;
+        let items: Vec<String> = (0..n).map(|i| i.to_string()).collect();
+        let src = format!(
+            "function f(): number {{ let t: number = 0; for (x of [{}]) {{ t = t + x; }} return t; }}",
+            items.join(", ")
+        );
+        let (module, _) = parse_source(&src);
+        let out = lower(&module).unwrap();
+        assert!(
+            out.diagnostics.iter().any(|d| d.contains("batas unroll")),
+            "harus ada diagnostic batas unroll, diagnostics: {:?}",
             out.diagnostics
         );
     }
