@@ -36,6 +36,8 @@ gnative build                        # src/*.gn → container/artifacts/<nama> (
 gnative run                          # build lalu buka jendela native (wgpu)
 gnative dev                          # watch: rebuild + restart otomatis tiap perubahan (gaya npm run dev)
 gnative build --target aarch64-unknown-linux-gnu   # cross-compile (Cranelift multi-arch)
+gnative audit              # periksa kerentanan/cela keamanan library yang dipakai
+gnative audit --live       # + basis data CVE langsung (cargo audit/cargo deny)
 ```
 
 Perintah CLI gaya npm: `init` (alias `new`), `install`, `list`/`ls`,
@@ -188,6 +190,40 @@ Tanpa fitur itu, build tetap sukses di mesin mana pun.
 - [AGENTS.md](AGENTS.md) — panduan untuk agen AI yang mengerjakan codebase ini.
 - [CHANGELOG.md](CHANGELOG.md) — riwayat perubahan per rilis.
 - [SECURITY.md](SECURITY.md) — pelaporan kerentanan, batas kepercayaan, kebijakan rollback.
+
+## Keamanan dependency — `gnative audit`
+
+`gnative audit` memeriksa apakah library yang dipakai punya cela keamanan,
+sudah tak dipelihara, atau berasal dari sumber yang tidak tepercaya:
+
+```bash
+gnative audit                      # offline: inventaris + basis data lokal
+gnative audit --live               # + basis data CVE (cargo audit/cargo deny)
+gnative audit --live --deny-warnings   # peringatan "unmaintained" ikut menggagalkan
+gnative audit --fail-on medium     # ambang gerbang lebih ketat (default: high)
+gnative audit --db ci/advisories.toml  # basis data advisory kustom
+```
+
+Yang diperiksa:
+
+1. **Inventaris persis** dari `Cargo.lock` (302 paket pada RC ini).
+2. **Basis data advisory lokal** `ci/advisories.toml` (offline, deterministik,
+   tanpa panggilan jaringan). Skemanya terdokumentasi di berkas itu.
+3. **Pemeriksaan struktural**: dependency dari **luar crates.io**
+   (git/registry alternatif = permukaan supply-chain) dan **versi ganda**
+   crate yang sama (memperbesar permukaan serangan + ukuran binary).
+4. **CVE langsung** dengan `--live` (memakai `cargo audit`/`cargo deny`).
+
+Exit code non-0 bila ada temuan pada/di atas ambang `--fail-on`
+(default `high`). Tingkat keparahan yang tak dikenal diperlakukan **konservatif**
+setara `high`.
+
+> Jujur: tanpa `--live`, kerentanan yang baru terbit (**zero-day**) **tidak**
+> tercakup — basis data lokal hanya memuat entri yang diisi maintainer. Tool
+> menyatakan hal ini secara eksplisit di akhir keluaran.
+
+Lihat juga [SECURITY.md](SECURITY.md) untuk pelaporan kerentanan dan kebijakan
+rollback.
 
 ## Lisensi & rilis
 

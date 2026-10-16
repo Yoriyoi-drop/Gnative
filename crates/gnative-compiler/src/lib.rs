@@ -20,8 +20,11 @@
 //! - `codegen/`       → MIR → object file (Cranelift / LLVM)
 //! - `linker.rs`      → object → binary native
 //! - `artifact.rs`    → pasca-link: strip debug + pisah debug + ukuran
+//! - `lockfile.rs`    → parse `Cargo.lock` (inventaris dependency)
+//! - `advisory.rs`    → basis data advisory lokal + pencocokan versi
 //! - `pipeline.rs`    → orkestrasi seluruh build
 
+pub mod advisory;
 pub mod artifact;
 pub mod cache;
 pub mod codegen;
@@ -31,6 +34,7 @@ pub mod graph;
 pub mod install;
 pub mod ir;
 pub mod linker;
+pub mod lockfile;
 pub mod lower;
 pub mod mir;
 pub mod mir_lower;

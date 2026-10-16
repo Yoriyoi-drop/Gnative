@@ -81,6 +81,8 @@ cargo run -- build                 # kompilasi project .gn → binary native
 cargo run -- build --strip         # + buang debug info (ukuran turun drastis)
 cargo run -- build --split-debug   # + simpan debug ke <binary>.debug (debuglink)
 cargo run -- run                   # buka jendela native (butuh GPU/display)
+cargo run -- audit                 # periksa kerentanan library (offline)
+cargo run -- audit --live          # + basis data CVE (cargo audit/cargo deny)
 ci/provenance.sh                   # checksum + provenance artefak (lokal, tanpa publish)
 ```
 
@@ -110,6 +112,10 @@ ci/provenance.sh                   # checksum + provenance artefak (lokal, tanpa
   cara memperbaiki) — bukan sukses semu (audit P1-12). Set `GNATIVE_REQUIRE_RUNTIME=1`
   (dipakai CI) untuk menjadikannya prasyarat keras juga di jalur `check`/test.
 - **Jangan menaruh logika di `main.rs`** — hanya delegasi.
+- **Basis data advisory tidak boleh dikarang.** `ci/advisories.toml` hanya
+  boleh diisi entri dengan ID + rujukan yang dapat diverifikasi (mis. RUSTSEC).
+  Pemeriksaan CVE langsung dilakukan lewat `gnative audit --live`; jangan
+  menyalin data CVE tanpa sumber.
 
 ## 9. Komunikasi
 

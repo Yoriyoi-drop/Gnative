@@ -1,5 +1,6 @@
 //! Dispatch perintah CLI. Satu file = satu perintah.
 
+pub mod audit;
 pub mod build;
 pub mod check;
 pub mod clean;
@@ -37,6 +38,7 @@ pub fn dispatch(args: Vec<String>) -> i32 {
         "graph" => graph::run(rest),
         "doctor" => doctor::run(rest),
         "container" => container::run(rest),
+        "audit" => audit::run(rest),
         "install" => install::run(rest),
         "list" => list::run(rest),
         "publish" => publish::run(rest),
@@ -70,6 +72,7 @@ PEMAKAIAN:
   gnative clean             bersihkan container/artifacts & cache
   gnative graph             cetak dependency graph
   gnative doctor            cek environment (linker, runtime .gn)
+  gnative audit             periksa kerentanan library (Cargo.lock + advisory)
   gnative container ...     subperintah container (list/inspect/verify)
 
   gnative init <nama>       alias `new` (gaya npm init)
@@ -84,6 +87,12 @@ PEMAKAIAN:
 
 FLAG GLOBAL:
   --verbose, -v             tampilkan detail (mis. `gnative doctor --verbose`)
+
+FLAG `audit`:
+  --db <berkas>             basis data advisory TOML (default ci/advisories.toml)
+  --fail-on <tingkat>       ambang gagal: info|low|medium|high|critical (default high)
+  --live                    jalankan `cargo audit`/`cargo deny` (basis data CVE langsung)
+  --deny-warnings           (dengan --live) peringatan seperti "unmaintained" ikut menggagalkan
 "#,
         version = env!("CARGO_PKG_VERSION")
     );

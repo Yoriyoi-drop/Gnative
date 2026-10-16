@@ -10,6 +10,15 @@ Flag `--locked` menegakkan `Cargo.lock` yang di-commit (build reproducible).
 `dist/SHA256SUMS.txt` + `dist/PROVENANCE.txt`. Skrip **tidak** mempublikasikan
 apa pun (lihat `SECURITY.md`).
 
+Gerbang keamanan: step "Audit dependency" menjalankan
+`cargo run -- audit --live` (memakai `cargo audit` atas basis data RustSec).
+Peringatan seperti "crate unmaintained" tidak menggagalkan CI secara default —
+jalankan `gnative audit --live --deny-warnings` lokal bila ingin lebih ketat.
+
+`advisories.toml` adalah basis data advisory **lokal/offline** untuk
+`gnative audit`. Isi hanya entri dengan ID dan rujukan yang dapat diverifikasi
+(mis. RUSTSEC); skema lengkap ada di komentar berkas itu.
+
 ## Mengaktifkan
 
 GitHub hanya menjalankan workflow dari `.github/workflows/`. Token push saat

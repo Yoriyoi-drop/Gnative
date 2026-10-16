@@ -81,4 +81,30 @@ mod tests {
         let code = run(vec!["doctor".into()]);
         assert!(code == 0 || code == 1, "exit code doctor: {code}");
     }
+
+    #[test]
+    fn audit_selesai_tanpa_panic() {
+        // Audit offline (tanpa `--live`) harus selesai dengan 0/1 dan tidak
+        // pernah panic — juga saat dijalankan dari direktori tanpa Cargo.lock.
+        let code = run(vec!["audit".into()]);
+        assert!(code == 0 || code == 1, "exit code audit: {code}");
+    }
+
+    #[test]
+    fn audit_db_hilang_exit_1() {
+        // `--db` menunjuk berkas tak ada → error jelas (bukan default diam).
+        assert_eq!(
+            run(vec![
+                "audit".into(),
+                "--db".into(),
+                "/tidak/ada/advisories.toml".into()
+            ]),
+            1
+        );
+    }
+
+    #[test]
+    fn audit_db_tanpa_nilai_exit_1() {
+        assert_eq!(run(vec!["audit".into(), "--db".into()]), 1);
+    }
 }

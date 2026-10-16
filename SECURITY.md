@@ -89,3 +89,21 @@ Provenance (commit, versi rustc, host triple, versi LLVM/CUDA) tercatat di
 `PROVENANCE.txt` pada direktori keluaran script tersebut. **Selama audit
 kesiapan rilis, tidak ada artefak yang dipublikasikan**; script hanya
 menghasilkan berkas lokal.
+
+## Memeriksa dependency Anda sendiri
+
+`gnative audit` memeriksa library yang dipakai project Anda:
+
+```bash
+gnative audit                          # offline: Cargo.lock + ci/advisories.toml
+gnative audit --live                   # + basis data CVE (cargo audit/cargo deny)
+gnative audit --live --deny-warnings   # peringatan "unmaintained" ikut gagal
+gnative audit --fail-on medium         # ambang gerbang lebih ketat
+```
+
+Lapis offline memakai basis data lokal `ci/advisories.toml` (skema
+terdokumentasi di berkas itu; hanya entri dengan ID dan rujukan yang dapat
+diverifikasi yang boleh ditulis — **tidak ada data CVE yang dikarang**). Lapis
+`--live` memanggil `cargo audit`/`cargo deny` untuk basis data CVE terbaru.
+Tanpa `--live`, tool menyatakan secara eksplisit bahwa kerentanan baru
+(zero-day) tidak tercakup.

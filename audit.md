@@ -944,3 +944,31 @@ gfx-wgpu 12, core 11, cli 7, gfx 5).
 
 
 
+
+### Iterasi 21 — Audit keamanan dependency (perintah `gnative audit`) (16 Okt 2026)
+
+- Masalah: release gate "Security" masih FAIL di audit awal karena tidak ada
+  mekanisme pemeriksaan library yang dipakai (inventory/duplikat/non-registry/
+  advisory/CVE) dan `ci/` hanya berisi definisi CI, bukan data advisory.
+- Perbaikan:
+  - Crate baru logikanya di dalam crate existing (tanpa crate baru): 
+    `gnative-compiler/src/lockfile.rs` (parse `Cargo.lock`, inventaris dependency Persis,
+    deteksi sumber non-registry + versi ganda), dan `gnative-compiler/src/advisory.rs`
+    (skema TOML, `Severity` dengan rank konservatif untuk tingkat tak dikenal,
+    pencocokan rentang semver dengan AND-koma, `check()` terhadap lockfile).
+  - CLI baru `gnative-cli/src/cmd/audit.rs` di-dispatch dari `cmd/mod.rs`:
+    laporan offline (inventaris + basis data lokal), pemeriksaan struktural,
+    `--live` optional dengan `cargo audit`/`cargo deny`, gerbang keluar non-0
+    bila temuan >= ambang (`--fail-on`, default `high`), `resolve_db` mencari
+    `ci/advisories.toml` dari sekitar `Cargo.lock`.
+  - `ci/advisories.toml` berisi **hanya skema + penjelasan + tanpa entri**;
+    aturan "tidak boleh mengarang data CVE" (AGENTS.md §8) dijaga.
+  - CI memanggil `cargo run -- audit --live` (basis data CVE langsung) setelah
+    test workspace; quickstart/README/DESIGN/SECURITY diperbarui.
+- Test: `cargo test --workspace` = **218 test lolos, 0 gagal, 0 skip**
+  (compiler 99, lang 53, runtime 24, gfx-wgpu 12, core 11, cli 14, gfx 5),
+  sesuai `grep -rn "#\\[test\\]"` = 218. `cargo fmt --check` bersih dan
+  `cargo clippy --workspace --all-targets -- -D warnings` bersih (16 Okt 2026).
+- Status Security gate: naik dari FAIL ke PARTIAL/PASS* (offline) — audit offline
+  bekerja jujur (tanpa data palsu), `--live` tersedia; aktivasi CI di GitHub
+  masih terpisah (token scope `workflow`, lihat `ci/README.md`).

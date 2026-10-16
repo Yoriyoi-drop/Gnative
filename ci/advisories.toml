@@ -1,0 +1,33 @@
+# Basis data advisory lokal untuk `gnative audit`.
+#
+# Sifat: OFFLINE dan deterministik. Berkas ini diisi oleh maintainer (mis.
+# transkripsi entri RUSTSEC / GitHub Advisory untuk crate yang benar-benar
+# dipakai `Cargo.lock`). Untuk pemeriksaan terhadap basis data CVE langsung,
+# jalankan:
+#
+#     gnative audit --live        # memakai `cargo audit` / `cargo deny`
+#
+# Tidak ada entri palsu/karangan di sini secara sengaja: entri hanya boleh
+# ditulis dengan ID dan rujukan yang dapat diverifikasi.
+#
+# ---------------------------------------------------------------------------
+# SKEMA
+# ---------------------------------------------------------------------------
+# [[advisory]]
+# id       = "RUSTSEC-YYYY-NNNN"    # wajib: identitas advisory
+# package  = "nama-crate"           # wajib: nama crate terdampak (sesuai Cargo.lock)
+# affected = ["<1.2.3", ">=2.0.0, <2.0.4"]   # wajib: minimal satu rentang versi
+# severity = "high"                 # info|low|medium|high|critical
+#                                   # (tak dikenal => diperlakukan setara high)
+# summary  = "ringkasan singkat"    # ringkas, Bahasa Indonesia
+# url      = "https://..."          # opsional: rujukan
+# patched  = "1.2.3"                # opsional: versi yang sudah diperbaiki
+#
+# Sintaks rentang versi (`affected`): dipisah koma = AND.
+#   "=1.2.3"  "<1.2.3"  "<=1.2.3"  ">1.2.3"  ">=1.2.3"  "1.2.3" (=)  "*"
+# Contoh: affected = [">=2.0.0, <2.0.4"]
+#
+# ---------------------------------------------------------------------------
+# ENTRI
+# ---------------------------------------------------------------------------
+# (belum ada entri)

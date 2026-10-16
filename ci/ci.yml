@@ -44,6 +44,16 @@ jobs:
       - name: Test workspace
         run: cargo test --workspace --locked
 
+      # Gerbang keamanan dependency: basis data CVE langsung (cargo audit).
+      # Peringatan "unmaintained" TIDAK menggagalkan (hanya vulnerability);
+      # jalankan lokal dengan `--deny-warnings` bila ingin lebih ketat.
+      - name: Audit dependency (cargo audit)
+        run: |
+          if ! command -v cargo-audit >/dev/null 2>&1; then
+            cargo install cargo-audit --locked
+          fi
+          cargo run --locked -- audit --live
+
       # Provenance/checksum harus dapat dihasilkan (tanpa publikasi artefak).
       - name: Provenance + checksum
         run: |

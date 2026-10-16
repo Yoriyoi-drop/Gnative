@@ -111,8 +111,9 @@ Gnative/
 ├── Cargo.lock              # DI-COMMIT — build rilis reproducible
 ├── audit.md                # audit kesiapan rilis + log remediasi
 ├── ci/
-│   ├── ci.yml              # definisi GitHub Actions (fmt/clippy/check/test/provenance)
+│   ├── ci.yml              # definisi GitHub Actions (fmt/clippy/check/test/audit/provenance)
 │   ├── README.md           # cara mengaktifkan + prasyarat runner
+│   ├── advisories.toml     # basis data advisory lokal untuk `gnative audit` (offline)
 │   └── provenance.sh       # checksum SHA-256 + provenance artefak (lokal, tanpa publish)
 ├── src/
 │   └── main.rs             # SATU-SATUNYA file di src/ — memanggil gnative_cli
@@ -472,6 +473,7 @@ pub enum Node {
 | `graph` | tampilkan dep graph project |
 | `container` | kelola container (list/inspect/clean) |
 | `doctor` | cek lingkungan (linker, libruntime, toolchain) |
+| `audit` | periksa kerentanan library yang dipakai (`Cargo.lock` + basis data advisory lokal; `--live` untuk basis data CVE) |
 | `help` | daftar perintah |
 
 Perintah gaya npm (analog):
@@ -493,6 +495,30 @@ object target dihasilkan tanpa toolkit; linker memakai cross-toolchain
 (`rustup target add ...` + `cargo build -p gnative-runtime --target ...`).
 
 Perintah `generate` **dihapus** — tidak ada lagi generate kode Rust.
+
+### 9.1 `audit` — pemeriksaan keamanan dependency
+
+`gnative audit` menjawab pertanyaan "apakah library yang dipakai punya cela
+keamanan / sudah tak dipelihara?" dalam tiga lapis:
+
+| Lapis | Sumber | Offline? |
+|---|---|---|
+| Inventaris | `Cargo.lock` (302 paket pada RC) | ya |
+| Advisory lokal | `ci/advisories.toml` (TOML, skema terdokumentasi) | ya |
+| CVE langsung | `cargo audit` / `cargo deny` via `--live` | tidak |
+
+Pemeriksaan struktural (selalu jalan): sumber **non-registry** (git/registry
+alternatif — permukaan supply-chain) dan **versi ganda** crate yang sama
+(memperbesar permukaan serangan + ukuran binary).
+
+Gerbang keluar: non-0 bila ada temuan pada/di atas `--fail-on <tingkat>`
+(default `high`; tingkat tak dikenal diperlakukan setara `high` — konservatif).
+`--live --deny-warnings` ikut menggagalkan pada peringatan seperti
+"crate unmaintained". Tanpa `--live`, tool menyatakan **jujur** bahwa
+kerentanan baru (zero-day) tidak tercakup.
+
+Modul: `lockfile.rs` (parse `Cargo.lock`), `advisory.rs` (skema + pencocokan
+rentang versi semver), `cmd/audit.rs` (orkestrasi + gerbang).
 
 ---
 
@@ -537,6 +563,8 @@ crates/gnative-compiler/src/codegen/cranelift.rs→ MIR → object (dev, multi-t
 crates/gnative-compiler/src/codegen/llvm.rs     → MIR → object (release, inkwell/LLVM 18)
 crates/gnative-compiler/src/linker.rs     → object + libruntime → binary (prefer release/ saat --release)
 crates/gnative-compiler/src/artifact.rs   → pasca-link: strip debug + pisah debug (`<bin>.debug`) + ukuran
+crates/gnative-compiler/src/lockfile.rs   → parse `Cargo.lock` (inventaris dependency + duplikat/non-registry)
+crates/gnative-compiler/src/advisory.rs   → basis data advisory lokal + pencocokan rentang versi (semver)
 crates/gnative-compiler/src/pipeline.rs   → orkestrasi build (+ `validate` untuk check)
 crates/gnative-compiler/runtime/@gnative/ui/ui.gn → runtime UI bawaan (.gn)
 
