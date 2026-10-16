@@ -113,7 +113,8 @@ pub fn build_with_target(
     // 6. Link → binary native (object .gn + libruntime wgpu/cuda).
     //    Libruntime di-build dari repo Gnative (`cargo build -p gnative-runtime`).
     let binary = parsed.artifacts.join(&obj_name);
-    match linker::find_runtime_dir(project_dir, target) {
+    let prefer_release = matches!(mode, BuildMode::Release);
+    match linker::find_runtime_dir(project_dir, target, prefer_release) {
         Some(runtime_dir) => {
             match linker::link_with_target(&object_file, &runtime_dir, &binary, target) {
                 Ok(()) => parsed.report.binary = Some(binary),

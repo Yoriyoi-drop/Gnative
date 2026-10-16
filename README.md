@@ -85,6 +85,40 @@ container/artifacts/
 └── app            # binary native (app.o + libgnative_runtime.a)
 ```
 
+## Ukuran artefak & strip
+
+Binary native **menautkan libruntime secara statis** (wgpu + winit + winit/CRT),
+sehingga tanpa strip ukurannya besar karena debug info libruntime ikut masuk.
+Gunakan `--strip` (buang debug info) atau `--split-debug` (pindahkan debug info
+ke `<binary>.debug` + `--add-gnu-debuglink`, tetap dapat di-debug dengan gdb):
+
+```bash
+gnative build --strip                  # buang debug info
+gnative build --split-debug            # strip + simpan <binary>.debug
+gnative build --release --strip        # backend LLVM 18 + ukuran minimal
+```
+
+Contoh terukur (contoh `vstack`+`text`, host x86_64-linux, `gnative build`,
+libruntime debug) — hasil nyata pada Iterasi 20 audit:
+
+| Artefak | Ukuran |
+|---|---|
+| `app` tanpa strip | **207.9 MB** (not stripped, with debug_info) |
+| `app` setelah `--strip --split-debug` | **29.1 MB** (hemat 178.8 MB) |
+| `app.debug` (debug info terpisah) | 198.3 MB |
+
+Catatan jujur:
+
+- `--release` kini memilih libruntime dari `target/release/` lebih dulu (dulu
+  selalu memakai `target/debug/`). Bangun dulu:
+  `cargo build --release -p gnative-runtime`.
+- **Startup** belum diukur secara kuantitatif: menjalankan binary butuh
+  GPU/display. Uji lokal hanya membuktikan binary stripped tetap boot ke event
+  loop (log `[gnative] backend render: wgpu`, proses hidup sampai dihentikan).
+- `--strip`/`--split-debug` memakai tool sistem `strip`/`objcopy`
+  (atau `llvm-strip`/`llvm-objcopy`). Bila tool tidak ada, build **gagal dengan
+  pesan jelas** — bukan sukses semu.
+
 ## Struktur
 
 ```

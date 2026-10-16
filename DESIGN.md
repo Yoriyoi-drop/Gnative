@@ -535,7 +535,8 @@ crates/gnative-compiler/src/mir_lower.rs  → IR → MIR
 crates/gnative-compiler/src/codegen/mod.rs      → dispatcher backend (+ target) + `used_intrinsics` (deklarasi import selektif)
 crates/gnative-compiler/src/codegen/cranelift.rs→ MIR → object (dev, multi-target via `lookup_by_name`)
 crates/gnative-compiler/src/codegen/llvm.rs     → MIR → object (release, inkwell/LLVM 18)
-crates/gnative-compiler/src/linker.rs     → object + libruntime → binary
+crates/gnative-compiler/src/linker.rs     → object + libruntime → binary (prefer release/ saat --release)
+crates/gnative-compiler/src/artifact.rs   → pasca-link: strip debug + pisah debug (`<bin>.debug`) + ukuran
 crates/gnative-compiler/src/pipeline.rs   → orkestrasi build (+ `validate` untuk check)
 crates/gnative-compiler/runtime/@gnative/ui/ui.gn → runtime UI bawaan (.gn)
 

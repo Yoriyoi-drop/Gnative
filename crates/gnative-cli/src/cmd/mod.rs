@@ -63,6 +63,8 @@ PEMAKAIAN:
   gnative build             kompilasi src/*.gn → binary native (backend Cranelift)
   gnative build --release   mode release (backend LLVM 18, optimasi agresif)
   gnative build --target T  cross-compile: triple target (mis. aarch64-unknown-linux-gnu)
+  gnative build --strip     buang debug info dari binary (ukuran turun drastis)
+  gnative build --split-debug  strip + simpan debug ke <binary>.debug (debuglink)
   gnative run               kompilasi lalu jalankan binary native
   gnative check             parse + type check saja
   gnative clean             bersihkan container/artifacts & cache

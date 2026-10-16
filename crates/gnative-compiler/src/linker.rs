@@ -115,14 +115,27 @@ pub fn find_linker_for(target: Option<&str>) -> Option<String> {
 /// jadi `target/debug` bisa berada di project `.gn` maupun di direktori
 /// induknya (root repo). Untuk cross-compile, cari `target/<triple>/…`
 /// (audit P1-13) — jangan pakai libruntime host untuk target lain.
-pub fn find_runtime_dir(project_dir: &Path, target: Option<&str>) -> Option<PathBuf> {
+///
+/// `prefer_release` = true (build `--release`) mencari `release/` lebih dulu:
+/// memakai libruntime debug untuk binary release menghasilkan artefak jauh
+/// lebih besar dan tidak konsisten (audit Tahap 4).
+pub fn find_runtime_dir(
+    project_dir: &Path,
+    target: Option<&str>,
+    prefer_release: bool,
+) -> Option<PathBuf> {
     // Pakai path absolut agar walk ke parent sampai root repo benar.
     let root = project_dir
         .canonicalize()
         .unwrap_or_else(|_| project_dir.to_path_buf());
+    let profiles: [&str; 2] = if prefer_release {
+        ["release", "debug"]
+    } else {
+        ["debug", "release"]
+    };
     let subs: Vec<String> = match target {
-        Some(t) => vec![format!("target/{t}/debug"), format!("target/{t}/release")],
-        None => vec!["target/debug".to_string(), "target/release".to_string()],
+        Some(t) => profiles.iter().map(|p| format!("target/{t}/{p}")).collect(),
+        None => profiles.iter().map(|p| format!("target/{p}")).collect(),
     };
     let mut dir = Some(root.as_path());
     while let Some(current) = dir {

@@ -78,6 +78,8 @@ cargo build -p gnative-runtime     # build libruntime (staticlib) — diperlukan
 cargo run -- help                  # daftar perintah CLI
 cargo run -- new demo              # buat project .gn contoh
 cargo run -- build                 # kompilasi project .gn → binary native
+cargo run -- build --strip         # + buang debug info (ukuran turun drastis)
+cargo run -- build --split-debug   # + simpan debug ke <binary>.debug (debuglink)
 cargo run -- run                   # buka jendela native (butuh GPU/display)
 ci/provenance.sh                   # checksum + provenance artefak (lokal, tanpa publish)
 ```

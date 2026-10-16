@@ -395,7 +395,7 @@ dengan batas yang disebutkan; **PENDING** = belum dikerjakan (sisa Tahap 3/4/5).
 | # | Gate | Status | Bukti |
 |---|---|---|---|
 | 1 | `cargo check --workspace` hijau | **PASS** | Iterasi 19 (dan setiap iterasi 1–18) |
-| 2 | `cargo test --workspace` hijau tanpa skip-diam; hitung = grep `#[test]` | **PASS** | 194 test, 0 gagal, 0 skip; `grep -rn "#\[test\]"` = **194** (compiler 82, lang 53, runtime 24, gfx-wgpu 12, core 11, cli 7, gfx 5) |
+| 2 | `cargo test --workspace` hijau tanpa skip-diam; hitung = grep `#[test]` | **PASS** | 198 test, 0 gagal, 0 skip; `grep -rn "#\[test\]"` = **198** (compiler 86, lang 53, runtime 24, gfx-wgpu 12, core 11, cli 7, gfx 5) |
 | 3 | `cargo clippy --workspace --all-targets -- -D warnings` + `cargo fmt --check` hijau | **PASS** | Iterasi 19; lint kode test (4 error) diperbaiki; CI diubah ke `--all-targets` |
 | 4 | Corpus adversarial parser (kosong/besar/terpotong/nesting/unicode) tanpa panic | **PASS** | Iterasi 1/4 (P0-01, P1-01..04); `gnative-lang` 53 test |
 | 5 | Typo-var/duplikat/siklus (stateless+stateful)/tipe-tak-dukung selalu error jelas | **PASS** | Iterasi 2/3/6/7/18 (P0-02/03/04, P1-06/07/08, P1-05) |
@@ -411,14 +411,14 @@ dengan batas yang disebutkan; **PENDING** = belum dikerjakan (sisa Tahap 3/4/5).
 | 15 | `Cargo.lock` ter-commit; lisensi + MSRV + changelog + tag RC + checksum | **PASS** | Iterasi 19: lock di-commit (`--locked` di CI), `LICENSE-MIT`/`LICENSE-APACHE`, MSRV 1.80, `CHANGELOG.md`, `SECURITY.md`, `ci/provenance.sh`, tag `v1.0.0-rc.1` |
 | 16 | Quickstart dari env bersih sampai `run` terdokumen + contoh terkompilasi | **PENDING** | Tahap 4: contoh terkompilasi sudah dibuktikan (gate 10); dokumen quickstart dari env bersih + `run` manual (butuh display) belum final |
 | 17 | Fitur belum-siap dinyatakan tak didukung + error jelas (CUDA/registry/animasi/font-vektor/multi-window/`%`/`${}`/block-comment) | **PASS** | Iterasi 15/16/17/18; `%` kini **didukung**, `${}`/`/* */`/CUDA dinyatakan + error jelas |
-| 18 | Tidak ada rewrite besar; DESIGN.md diperbarui bila arsitektur berubah | **PASS** | DESIGN.md §4/§5.3/§7.2/§7.5/§10 diperbarui di Iterasi 14–19 |
+| 18 | Tidak ada rewrite besar; DESIGN.md diperbarui bila arsitektur berubah | **PASS** | DESIGN.md §4/§5.3/§7.2/§7.5/§10 diperbarui di Iterasi 14–20 |
+| 19 | Ukuran artefak terkendali + terdokumen (strip/split-debug) | **PASS** | Iterasi 20: 207.9 MB → **29.1 MB** (`--strip --split-debug`), `artifact.rs` + README tabel ukuran |
 
-**Sisa yang benar-benar belum dikerjakan (Tahap 3/4):**
+**Sisa yang benar-benar belum dikerjakan (Tahap 3/4/5):**
 
 - Fuzzing terukur (lexer/parser/lower/IR/event/state) — gate 8 masih `PASS*`.
 - Uji resize/HiDPI/overlap visual dengan GPU/display nyata — gate 12 masih `PASS*`.
-- `strip`/split-debug + dokumentasi ukuran & startup (temuan Iterasi 19:
-  binary contoh **218 MB, not stripped**) — Tahap 4.
+- Startup kuantitatif (butuh GPU/display) — ukuran sudah terdokumen (gate 19).
 - Quickstart dari env bersih + `run` manual terdokumentasi — gate 16 `PENDING`.
 - Uji instalasi dari artefak (bukan source tree) + aktivasi CI di
   `.github/workflows/` (butuh token ber-scope `workflow`).
@@ -886,6 +886,61 @@ berikutnya (opsi `--release` + `strip`/`objcopy --only-keep-debug`).
   dari artefak (bukan source tree), matriks gate PASS (checklist G), dan
   keputusan memasukkan `--all-targets` ke CI.
 - Tag: `v1.0.0-rc.1` (lihat commit Iterasi 19).
+
+### Iterasi 20 — Tahap 4: strip/split-debug + ukuran terdokumen (16 Okt 2026)
+
+Sasaran: item Tahap 4 "strip/split-debug + ukuran/startup terdokumen".
+Temuan Iterasi 19: binary contoh **218 MB, not stripped**.
+
+- **Modul baru `crates/gnative-compiler/src/artifact.rs`** (1 file = 1
+  tanggung jawab: *pasca-link packaging*):
+  - `strip(binary, split_debug) -> GnResult<ArtifactReport>` — buang debug info
+    (`strip`/`llvm-strip`); bila `split_debug`, pakai
+    `objcopy --only-keep-debug` + `strip --strip-debug` +
+    `objcopy --add-gnu-debuglink`.
+  - `ArtifactReport { original_size, final_size, stripped, debug_file }` +
+    `saved()`; `human_size()` untuk laporan.
+  - Tool tidak ada / gagal → **`Err` jelas** (bukan sukses semu). Debuglink
+    best-effort: gagal taut hanya berarti debug tak otomatis ditemukan.
+- **CLI `gnative build --strip` / `--split-debug`** (`cmd/build.rs`):
+  `--split-debug` menyiratkan strip. Melaporkan ukuran sebelum → sesudah +
+  hemat. Flag eksplisit diminta tapi tool gagal → **exit 1**.
+  Tanpa flag: petunjuk `--strip` muncul di level `--verbose`.
+- **`linker::find_runtime_dir(project_dir, target, prefer_release)`** — build
+  `--release` kini mencari `target/release/` **lebih dulu** (sebelumnya selalu
+  `target/debug/`, sehingga binary release menautkan libruntime debug yang jauh
+  lebih besar). `pipeline.rs` meneruskan `mode == Release`.
+- **Dokumen**: README §"Ukuran artefak & strip" (tabel ukuran nyata + catatan
+  startup jujur), DESIGN.md §10 (`artifact.rs` + linker prefer-release),
+  AGENTS.md §6 (flag baru), CLI help (`cmd/mod.rs`).
+
+**Ukuran terukur (host x86_64-linux, contoh `vstack`+`text`, libruntime debug):**
+
+| Artefak | Ukuran |
+|---|---|
+| `rcapp` tanpa strip | **207.9 MB** (`not stripped`, `with debug_info`) |
+| `rcapp` setelah `--strip --split-debug` | **29.1 MB** (hemat **178.8 MB**, ~86%) |
+| `rcapp.debug` (debug info terpisah) | 198.3 MB |
+
+**Startup (jujur):** belum diukur kuantitatif — menjalankan binary butuh
+GPU/display. Uji lokal: binary stripped **boot ke event loop** (log
+`[gnative] backend render: wgpu`, proses tetap hidup sampai dihentikan
+timeout, tanpa panic); `ldd` hanya `libm`/`libgcc_s`/`libc` (tidak ada
+dependency baru dari strip).
+
+**Test baru (4, di `artifact.rs`):** `human_size_memformat`,
+`strip_berkas_hilang_error`, `report_saved_tidak_underflow`,
+`strip_binary_nyata_mengecil` (strip executable nyata; tidak memperbesar).
+
+**Bukti verifikasi:** `cargo fmt --check` bersih;
+`cargo clippy --workspace --all-targets -- -D warnings` bersih;
+`cargo test --workspace` → **198 lolos, 0 gagal, 0 skip**
+(= jumlah `grep -rn "#\[test\]"` = 198; compiler 86, lang 53, runtime 24,
+gfx-wgpu 12, core 11, cli 7, gfx 5).
+
+- Status Tahap 4 (parsial): artefak/ukuran = **selesai**. Sisa Tahap 4:
+  quickstart dari env bersih sampai `run` terdokumentasi (gate 16).
+
 
 
 

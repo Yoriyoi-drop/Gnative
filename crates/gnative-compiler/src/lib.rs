@@ -19,8 +19,10 @@
 //! - `mir_lower.rs`   → Semantic IR → MIR
 //! - `codegen/`       → MIR → object file (Cranelift / LLVM)
 //! - `linker.rs`      → object → binary native
+//! - `artifact.rs`    → pasca-link: strip debug + pisah debug + ukuran
 //! - `pipeline.rs`    → orkestrasi seluruh build
 
+pub mod artifact;
 pub mod cache;
 pub mod codegen;
 pub mod config;
