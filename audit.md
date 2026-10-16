@@ -445,3 +445,14 @@ changelog + checklist G. Tanpa itu, rilis apa pun harus bukan v1.0.0.
 - Review subagent: approve; 2 low/info ditindaklanjuti sebagian (komentar guard,
   saran test 3-node/sibling dicatat backlog).
 - Status P0-03: CLOSED.
+
+### Iterasi 3 — P0-02 scope simbol lokal di checker (16 Okt 2026)
+- File: `crates/gnative-lang/src/checker.rs` (tambah `scopes: Vec<HashSet<String>>`
+  + `const_names`; helper `scope_push`/`scope_pop`/`declare_local`/`is_known_local`;
+  `check_function`/`check_component`/`check_stmt`/`check_expr` jadi `&mut self`;
+  daftarkan param/state/this/props/let/loop-var; `Expr::Ident`/`Assign`/`Arrow`
+  validasi rujukan tak dikenal → `variabel X tidak dikenal`).
+- Test: 6 regresi baru (typo-var fungsi/method, props/this dikenal, let/for bersih,
+  const infra). `cargo test -p gnative-lang` 27 lolos; `cargo test -p gnative-compiler`
+  51 lolos (tanpa regresi). `cargo fmt --check` + `cargo clippy -D warnings` hijau.
+- Status P0-02: CLOSED (sisa: const belum ter-parse di parser → P1-08).
