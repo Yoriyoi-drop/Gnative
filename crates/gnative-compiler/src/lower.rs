@@ -548,7 +548,10 @@ fn lower_expr_with_state(
         Expr::Number(n, _) => Ok(IrExpr::F64(*n)),
         Expr::Bool(b, _) => Ok(IrExpr::Bool(*b)),
         Expr::String(s, _) | Expr::Template(s, _) => Ok(IrExpr::Str(s.clone())),
-        Expr::Null(_) => Ok(IrExpr::F64(0.0)),
+        Expr::Null(_) => Err(
+            "`null` hanya valid sebagai nilai `return;` — bukan sebagai nilai ekspresi (roadmap)"
+                .into(),
+        ),
         Expr::Ident(name, _) => {
             if is_state(name) {
                 Ok(IrExpr::StateField(name.clone()))
@@ -795,7 +798,10 @@ fn lower_expr(e: &Expr) -> Result<IrExpr, String> {
         Expr::Number(n, _) => Ok(IrExpr::F64(*n)),
         Expr::Bool(b, _) => Ok(IrExpr::Bool(*b)),
         Expr::String(s, _) | Expr::Template(s, _) => Ok(IrExpr::Str(s.clone())),
-        Expr::Null(_) => Ok(IrExpr::F64(0.0)),
+        Expr::Null(_) => Err(
+            "`null` hanya valid sebagai nilai `return;` — bukan sebagai nilai ekspresi (roadmap)"
+                .into(),
+        ),
         Expr::Ident(name, _) => Ok(IrExpr::Var(name.clone())),
         Expr::BinOp {
             left, op, right, ..
@@ -1945,6 +1951,45 @@ mod tests {
         assert!(
             out.diagnostics.iter().any(|d| d.contains("batas unroll")),
             "harus ada diagnostic batas unroll, diagnostics: {:?}",
+            out.diagnostics
+        );
+    }
+
+    #[test]
+    fn null_sebagai_nilai_ditolak() {
+        // P2-04: `null` sebagai nilai ekspresi tidak lagi diam jadi 0.0.
+        let src = "function f(): number { let x: number = null; return x; }";
+        let (module, _) = parse_source(src);
+        let out = lower(&module).unwrap();
+        assert!(
+            out.diagnostics.iter().any(|d| d.contains("null")),
+            "null sebagai nilai harus dilaporkan, diagnostics: {:?}",
+            out.diagnostics
+        );
+    }
+
+    #[test]
+    fn null_sebagai_return_tetap_valid() {
+        // `return null;` = return tanpa nilai → tetap boleh.
+        let src = "function f(): number { return null; }";
+        let (module, _) = parse_source(src);
+        let out = lower(&module).unwrap();
+        assert!(
+            out.diagnostics.is_empty(),
+            "return null harus valid, diagnostics: {:?}",
+            out.diagnostics
+        );
+    }
+
+    #[test]
+    fn size_bukan_literal_ditolak() {
+        // P2-04: `size` wajib literal angka.
+        let src = "function f(): number { return 1; } window App { size: [x, 600]; }";
+        let (module, _) = parse_source(src);
+        let out = lower(&module).unwrap();
+        assert!(
+            out.diagnostics.iter().any(|d| d.contains("angka")),
+            "size non-literal harus error, diagnostics: {:?}",
             out.diagnostics
         );
     }

@@ -4,7 +4,7 @@
 //! Cranelift: slot MIR → alloca entry-block, CFG Label/Jump/Branch →
 //! basic block, intrinsik runtime di-declare (di-resolve saat link).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use gnative_core::{GnError, GnResult};
@@ -101,7 +101,7 @@ impl CodegenBackend for LlvmBackend {
             strings: Vec::new(),
             sigs: HashMap::new(),
         };
-        gen.declare_runtime()?;
+        gen.declare_runtime(&super::used_intrinsics(mir))?;
         gen.declare_strings(mir)?;
 
         // 3. Signature fungsi user (untuk call + definisi).
@@ -221,8 +221,9 @@ impl<'ctx, 'm> ModuleGen<'ctx, 'm> {
         self.runtime.insert(name.to_string(), fv);
     }
 
-    /// Deklarasikan semua intrinsik runtime + catat jenis return-nya.
-    fn declare_runtime(&mut self) -> GnResult<()> {
+    /// Deklarasikan intrinsik runtime yang dipakai `used` (P2-06) + catat
+    /// jenis return-nya. Hanya yang dipakai, agar object fungsi murni bersih.
+    fn declare_runtime(&mut self, used: &HashSet<String>) -> GnResult<()> {
         let (ptr, f64t, i8t, i32t, i64t) = (
             BasicMetadataTypeEnum::from(self.ptr_ty),
             BasicMetadataTypeEnum::from(self.f64_ty),
@@ -230,49 +231,45 @@ impl<'ctx, 'm> ModuleGen<'ctx, 'm> {
             BasicMetadataTypeEnum::from(self.i32_ty),
             BasicMetadataTypeEnum::from(self.i64_ty),
         );
-        self.declare_import("puts", &[ptr], Some(SlotKind::I32));
-        self.declare_import(
-            "gn_window_create",
-            &[ptr, i64t, i32t, i32t],
-            Some(SlotKind::I32),
-        );
-        self.declare_import("gn_window_run", &[i32t], Some(SlotKind::I32));
-        self.declare_import("gn_scene_create", &[], Some(SlotKind::I64));
-        self.declare_import("gn_scene_add_text", &[i64t, ptr, f64t], None);
-        self.declare_import("gn_scene_add_button", &[i64t, ptr], None);
-        self.declare_import("gn_scene_add_input", &[i64t, ptr], None);
-        self.declare_import("gn_scene_begin_vstack", &[i64t, f64t], None);
-        self.declare_import("gn_scene_end_vstack", &[i64t], None);
-        self.declare_import("gn_window_run_scene", &[i64t], Some(SlotKind::I32));
-        self.declare_import("gn_state_set_f64", &[ptr, ptr, f64t], None);
-        self.declare_import("gn_state_get_f64", &[ptr, ptr], Some(SlotKind::F64));
-        self.declare_import("gn_state_set_bool", &[ptr, ptr, i8t], None);
-        self.declare_import("gn_state_get_bool", &[ptr, ptr], Some(SlotKind::I8));
-        self.declare_import("gn_state_set_str", &[ptr, ptr, ptr], None);
-        self.declare_import("gn_state_get_str", &[ptr, ptr], Some(SlotKind::Ptr));
-        self.declare_import(
-            "gn_scene_add_button_clickable",
-            &[i64t, ptr, ptr, ptr],
-            None,
-        );
-        self.declare_import("gn_register_method", &[ptr, ptr, ptr], None);
-        self.declare_import("gn_window_run_dynamic", &[ptr], Some(SlotKind::I32));
-
-        self.runtime_ret
-            .insert("gn_scene_create".into(), SlotKind::I64);
-        self.runtime_ret
-            .insert("gn_window_run_scene".into(), SlotKind::I32);
-        self.runtime_ret
-            .insert("gn_window_create".into(), SlotKind::I32);
-        self.runtime_ret.insert("puts".into(), SlotKind::I32);
-        self.runtime_ret
-            .insert("gn_state_get_f64".into(), SlotKind::F64);
-        self.runtime_ret
-            .insert("gn_state_get_bool".into(), SlotKind::I8);
-        self.runtime_ret
-            .insert("gn_state_get_str".into(), SlotKind::Ptr);
-        self.runtime_ret
-            .insert("gn_window_run_dynamic".into(), SlotKind::I32);
+        // (nama, params, ret) — hanya di-declare bila ada di `used`.
+        let specs: [(&str, Vec<BasicMetadataTypeEnum<'ctx>>, Option<SlotKind>); 19] = [
+            ("puts", vec![ptr], Some(SlotKind::I32)),
+            (
+                "gn_window_create",
+                vec![ptr, i64t, i32t, i32t],
+                Some(SlotKind::I32),
+            ),
+            ("gn_window_run", vec![i32t], Some(SlotKind::I32)),
+            ("gn_scene_create", vec![], Some(SlotKind::I64)),
+            ("gn_scene_add_text", vec![i64t, ptr, f64t], None),
+            ("gn_scene_add_button", vec![i64t, ptr], None),
+            ("gn_scene_add_input", vec![i64t, ptr], None),
+            ("gn_scene_begin_vstack", vec![i64t, f64t], None),
+            ("gn_scene_end_vstack", vec![i64t], None),
+            ("gn_window_run_scene", vec![i64t], Some(SlotKind::I32)),
+            ("gn_state_set_f64", vec![ptr, ptr, f64t], None),
+            ("gn_state_get_f64", vec![ptr, ptr], Some(SlotKind::F64)),
+            ("gn_state_set_bool", vec![ptr, ptr, i8t], None),
+            ("gn_state_get_bool", vec![ptr, ptr], Some(SlotKind::I8)),
+            ("gn_state_set_str", vec![ptr, ptr, ptr], None),
+            ("gn_state_get_str", vec![ptr, ptr], Some(SlotKind::Ptr)),
+            (
+                "gn_scene_add_button_clickable",
+                vec![i64t, ptr, ptr, ptr],
+                None,
+            ),
+            ("gn_register_method", vec![ptr, ptr, ptr], None),
+            ("gn_window_run_dynamic", vec![ptr], Some(SlotKind::I32)),
+        ];
+        for (name, params, ret) in &specs {
+            if !used.contains(*name) {
+                continue;
+            }
+            self.declare_import(name, params, *ret);
+            if let Some(k) = ret {
+                self.runtime_ret.insert((*name).to_string(), *k);
+            }
+        }
         Ok(())
     }
 
@@ -303,6 +300,9 @@ struct FuncGen<'ctx> {
     vars: HashMap<u32, (PointerValue<'ctx>, SlotKind)>,
     blocks: HashMap<u32, inkwell::basic_block::BasicBlock<'ctx>>,
     terminated: bool,
+    /// Sudah pernah masuk ke blok label (blok pertama). Sinkron dengan
+    /// backend Cranelift agar aturan validasi MIR identik (P2-05).
+    entered: bool,
 }
 
 impl<'ctx, 'm> ModuleGen<'ctx, 'm> {
@@ -352,6 +352,7 @@ impl<'ctx, 'm> ModuleGen<'ctx, 'm> {
             vars: HashMap::new(),
             blocks: HashMap::new(),
             terminated: false,
+            entered: false,
         };
 
         // Blok per Label (urutan body) + alloca semua slot/var di entry.
@@ -392,12 +393,23 @@ impl<'ctx, 'm> ModuleGen<'ctx, 'm> {
             match inst {
                 MirInst::Label(n) => {
                     let bb = gen.blocks[n];
-                    if !gen.terminated {
+                    if gen.terminated {
+                        // Sudah ada terminator (Jump/Branch) menuju blok ini.
+                    } else if !gen.entered {
+                        // Blok pertama: LLVM mewajibkan entry punya terminator,
+                        // jadi branch entry → label pertama.
                         self.builder.position_at_end(current);
                         self.builder
                             .build_unconditional_branch(bb)
                             .map_err(err_llvm)?;
+                    } else {
+                        // Aturan identik dengan backend Cranelift (P2-05):
+                        // Label tanpa terminator sebelumnya = MIR invalid.
+                        return Err(GnError::Other(format!(
+                            "Label({n}) tanpa terminator sebelumnya (invalid MIR)"
+                        )));
                     }
+                    gen.entered = true;
                     self.builder.position_at_end(bb);
                     current = bb;
                     gen.terminated = false;
@@ -744,12 +756,19 @@ impl<'ctx, 'm> ModuleGen<'ctx, 'm> {
             }
             MirInst::WindowCreate {
                 title,
+                title_len,
                 width,
                 height,
             } => {
                 let (t, _) = self.load_slot(gen, *title)?;
-                let fref = self.runtime["gn_window_create"];
-                let len = self.context.i64_type().const_zero();
+                let fref = *self.runtime.get("gn_window_create").ok_or_else(|| {
+                    GnError::Other("gn_window_create tidak dideklarasikan (invalid MIR)".into())
+                })?;
+                // P2-06: pakai panjang judul sebenarnya (0 = dinamis).
+                let len = self
+                    .context
+                    .i64_type()
+                    .const_int(u64::from(*title_len), false);
                 let w = self.context.i32_type().const_int(u64::from(*width), false);
                 let h = self.context.i32_type().const_int(u64::from(*height), false);
                 let site = self
@@ -772,7 +791,9 @@ impl<'ctx, 'm> ModuleGen<'ctx, 'm> {
             }
             MirInst::WindowRun(handle) => {
                 let (h, _) = self.load_slot(gen, *handle)?;
-                let fref = self.runtime["gn_window_run"];
+                let fref = *self.runtime.get("gn_window_run").ok_or_else(|| {
+                    GnError::Other("gn_window_run tidak dideklarasikan (invalid MIR)".into())
+                })?;
                 self.builder
                     .build_call(fref, &[BasicMetadataValueEnum::from(h)], "windowrun")
                     .map_err(err_llvm)?;
@@ -952,6 +973,7 @@ mod tests {
                     MirInst::StrAddr(0), // slot 0: title ptr
                     MirInst::WindowCreate {
                         title: 0,
+                        title_len: 4,
                         width: 800,
                         height: 600,
                     }, // slot 1: handle

@@ -79,6 +79,9 @@ PEMAKAIAN:
   gnative publish           publish package ke registry (roadmap 1.1)
 
   gnative help              bantuan ini
+
+FLAG GLOBAL:
+  --verbose, -v             tampilkan detail (mis. `gnative doctor --verbose`)
 "#,
         version = env!("CARGO_PKG_VERSION")
     );

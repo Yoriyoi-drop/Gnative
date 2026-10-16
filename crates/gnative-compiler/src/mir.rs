@@ -90,8 +90,15 @@ pub enum MirInst {
     /// Alamat fungsi MIR lain (untuk registrasi handler/build ke runtime).
     /// Hasil: pointer buram (`Ptr`).
     FuncAddr { func: String },
-    /// Panggil intrinsik `gn_window_create(title_ptr, w, h)` — hasil = handle.
-    WindowCreate { title: u32, width: u32, height: u32 },
+    /// Panggil intrinsik `gn_window_create(title_ptr, title_len, w, h)`.
+    /// `title_len` = panjang byte judul bila diketahui literal, `0` bila judul
+    /// dinamis (runtime jatuh ke pembacaan C-string berbatas). Hasil = handle.
+    WindowCreate {
+        title: u32,
+        title_len: u32,
+        width: u32,
+        height: u32,
+    },
     /// Panggil intrinsik `gn_window_run(handle)` (blocking event loop).
     WindowRun(u32),
     /// `return`; `Some(slot)` = nilai, `None` = void.

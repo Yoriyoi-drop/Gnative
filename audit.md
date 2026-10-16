@@ -685,4 +685,30 @@ changelog + checklist G. Tanpa itu, rilis apa pun harus bukan v1.0.0.
 - Catatan: **P1-05** (spec precedence + `%`) masih terbuka; akan ditangani
   bersama klaster parser/language berikutnya.
 
+### Iterasi 15 — P2-01..06 + P2-14 (16 Okt 2026)
+
+- P2-01: `lex_template` kini **melaporkan error** untuk interpolasi `${}`
+  (belum didukung) dan template tak terterminasi — tidak lagi diam jadi literal.
+- P2-02: ident unicode konsisten (`is_alphabetic` untuk awal & lanjutan),
+  komentar blok `/* */` didukung (tak terterminasi = error), simbol tak
+  dikenal (`$`/`#`/… ) → token `TokenKind::Error` + diagnostik.
+- P2-03: `else-if` di-parse aman sebagai `If` bersarang (hapus hack
+  `pos -= 1`); batas `for..of` didokumentasikan di parser.
+- P2-04: `null` sebagai nilai ekspresi → **error jelas** (bukan `0.0` diam);
+  `return null;` tetap valid. `size`/`gap` non-literal tetap error.
+- P2-05: aturan Label/terminator **identik** antar backend — LLVM kini
+  memakai flag `entered` + `Err` untuk `Label` tanpa terminator (sebelumnya
+  bridge diam), menyamai Cranelift.
+- P2-06: deklarasi intrinsik **selektif** via `codegen::used_intrinsics`
+  (object fungsi murni bersih dari `gn_*`); `title_len` window dikirim
+  sebenarnya (0 = dinamis); `intern` O(1) via `HashMap` (bukan scan O(n²)).
+- P2-14: `gnative-cli/src/log.rs` berlevel (`info/debug/warn/error`) +
+  flag global `--verbose`/`-v`; `doctor` kini menampilkan **versi, target
+  triple host, linker (seragam `linker::find_linker`), LLVM, CUDA,
+  libruntime** + detail verbose; pesan `GnError` diseragamkan ke Indonesia.
+- Test: lexer (template/ident/block-comment/simbol), parser (else-if), lower
+  (null/size), codegen (used_intrinsics, object fungsi murni bersih),
+  CLI (verbose/doctor). `cargo test --workspace` hijau; fmt/clippy bersih.
+- Status P2-01..06: CLOSED. Status P2-14: CLOSED.
+
 

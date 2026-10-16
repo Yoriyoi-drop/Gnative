@@ -34,7 +34,7 @@ impl<'a> Lexer<'a> {
         let mut tokens = Vec::new();
         let mut diagnostics: Vec<Diagnostic> = Vec::new();
         loop {
-            self.skip_whitespace_and_comments();
+            self.skip_whitespace_and_comments(&mut diagnostics);
             let start_loc = self.loc();
             let start_byte = self.byte_pos;
             let c = match self.peek() {
@@ -45,7 +45,7 @@ impl<'a> Lexer<'a> {
                 }
             };
 
-            let kind = if c.is_ascii_alphabetic() || c == '_' {
+            let kind = if c.is_alphabetic() || c == '_' {
                 self.lex_ident_or_keyword()
             } else if c.is_ascii_digit() {
                 self.lex_number(&mut diagnostics)
@@ -58,6 +58,8 @@ impl<'a> Lexer<'a> {
         (tokens, diagnostics)
     }
 
+    /// Identifier: diawali huruf unicode (`is_alphabetic`) atau `_`, dilanjutkan
+    /// huruf/angka unicode atau `_`. Konsisten untuk awal & lanjutan (P2-02).
     fn lex_ident_or_keyword(&mut self) -> TokenKind {
         let start = self.pos;
         while let Some(c) = self.peek() {
@@ -170,19 +172,44 @@ impl<'a> Lexer<'a> {
         TokenKind::String(text)
     }
 
-    fn lex_template(&mut self) -> TokenKind {
-        // Backtick pembuka sudah dikonsumsi oleh lex_symbol; isi disimpan mentah
-        // (ekspansi `${}` = roadmap).
+    /// Template literal (backtick). Interpolasi `${}` **belum didukung** →
+    /// dilaporkan sebagai error (bukan diam jadi literal, P2-01). Template tak
+    /// terterminasi juga error.
+    fn lex_template(&mut self, diags: &mut Vec<Diagnostic>) -> TokenKind {
+        // Backtick pembuka sudah dikonsumsi oleh lex_symbol.
+        let start_byte = self.byte_pos;
+        let start_loc = self.loc();
         let start = self.pos;
+        let mut terminated = false;
+        let mut interpolation = false;
         while let Some(c) = self.peek() {
             self.bump();
             if c == '`' {
+                terminated = true;
                 break;
             }
+            if c == '$' && self.peek() == Some('{') {
+                interpolation = true;
+            }
         }
-        let text: String = self.chars[start..self.pos.saturating_sub(1)]
-            .iter()
-            .collect();
+        let end = if terminated {
+            self.pos.saturating_sub(1)
+        } else {
+            self.pos
+        };
+        let text: String = self.chars[start..end].iter().collect();
+        if interpolation {
+            diags.push(Diagnostic::error(
+                Span::new(start_byte, self.byte_pos, start_loc, self.loc()),
+                "interpolasi `${}` pada template literal belum didukung".into(),
+            ));
+        }
+        if !terminated {
+            diags.push(Diagnostic::error(
+                Span::new(start_byte, self.byte_pos, start_loc, self.loc()),
+                "template literal tak terterminasi (kurang backtick penutup)".into(),
+            ));
+        }
         TokenKind::Template(text)
     }
 
@@ -290,12 +317,25 @@ impl<'a> Lexer<'a> {
                 }
             }
             '"' | '\'' => self.lex_string(c, diags),
-            '`' => self.lex_template(),
-            other => TokenKind::Ident(other.to_string()),
+            '`' => self.lex_template(diags),
+            other => {
+                diags.push(Diagnostic::error(
+                    Span::new(
+                        self.byte_pos.saturating_sub(other.len_utf8()),
+                        self.byte_pos,
+                        self.loc(),
+                        self.loc(),
+                    ),
+                    format!("karakter tak dikenal: `{other}`"),
+                ));
+                TokenKind::Error
+            }
         }
     }
 
-    fn skip_whitespace_and_comments(&mut self) {
+    /// Lewati whitespace, komentar baris `//…` dan blok `/* … */`.
+    /// Komentar blok tak terterminasi dilaporkan sebagai error (P2-02).
+    fn skip_whitespace_and_comments(&mut self, diags: &mut Vec<Diagnostic>) {
         loop {
             match self.peek() {
                 Some(c) if c.is_whitespace() => {
@@ -307,6 +347,28 @@ impl<'a> Lexer<'a> {
                         if c == '\n' {
                             break;
                         }
+                    }
+                }
+                Some('/') if self.peek_n(1) == Some('*') => {
+                    let start_byte = self.byte_pos;
+                    let start_loc = self.loc();
+                    self.bump();
+                    self.bump();
+                    let mut closed = false;
+                    while let Some(c) = self.peek() {
+                        if c == '*' && self.peek_n(1) == Some('/') {
+                            self.bump();
+                            self.bump();
+                            closed = true;
+                            break;
+                        }
+                        self.bump();
+                    }
+                    if !closed {
+                        diags.push(Diagnostic::error(
+                            Span::new(start_byte, self.byte_pos, start_loc, self.loc()),
+                            "komentar blok `/*` tak terterminasi (kurang `*/`)".into(),
+                        ));
                     }
                 }
                 _ => break,
@@ -423,17 +485,16 @@ mod tests {
 
     #[test]
     fn span_byte_unicode_tergeser() {
-        // Karakter unicode (😀 = 4 byte UTF-8) harus menggeser offset byte,
-        // bukan indeks char. 😀 bukan alphanumeric → masuk lex_symbol sebagai
-        // ident 1-karakter (4 byte), lalu `x` ident terpisah.
-        let src = "😀x";
+        // Karakter unicode (é = 2 byte UTF-8) sebagai ident harus menggeser
+        // offset byte, bukan indeks char. é alphabetic → ident valid (P2-02).
+        let src = "é x";
         let (tokens, _) = Lexer::new(src).tokenize();
-        // token pertama = Ident("😀") span byte 0..4
+        // token pertama = Ident("é") span byte 0..2
         assert_eq!(tokens[0].span.start, 0);
-        assert_eq!(tokens[0].span.end, 4);
-        // token kedua `x` dimulai di byte 4
-        assert_eq!(tokens[1].span.start, 4);
-        assert_eq!(tokens[1].span.end, 5);
+        assert_eq!(tokens[0].span.end, 2);
+        // token kedua `x` dimulai di byte 3 (setelah spasi di byte 2)
+        assert_eq!(tokens[1].span.start, 3);
+        assert_eq!(tokens[1].span.end, 4);
     }
 
     // --- P1-03: angka invalid harus error, bukan 0.0 diam ---
@@ -492,6 +553,69 @@ mod tests {
     }
 
     // --- P1-02 (lexer-side): delimiter tak perlu di sini; diuji di parser ---
+
+    // --- P2-01: template `${}` tidak lagi literal diam ---
+
+    #[test]
+    fn template_interpolasi_dilaporkan() {
+        let (_tokens, diags) = Lexer::new("let s = `halo ${nama}`;").tokenize();
+        assert!(
+            diags.iter().any(|d| d.message.contains("interpolasi")),
+            "interpolasi template harus error, dapat: {:?}",
+            diags
+        );
+    }
+
+    #[test]
+    fn template_tak_terterminasi_error() {
+        let (_tokens, diags) = Lexer::new("let s = `tanpa penutup;").tokenize();
+        assert!(diags.iter().any(|d| d.message.contains("tak terterminasi")));
+    }
+
+    // --- P2-02: ident unicode konsisten + block comment + simbol tak dikenal ---
+
+    #[test]
+    fn ident_unicode_konsisten() {
+        let (tokens, diags) = Lexer::new("café_1 naïve").tokenize();
+        assert!(diags.is_empty(), "ident unicode valid tak boleh error");
+        assert!(tokens
+            .iter()
+            .any(|t| matches!(&t.kind, TokenKind::Ident(n) if n == "café_1")));
+        assert!(tokens
+            .iter()
+            .any(|t| matches!(&t.kind, TokenKind::Ident(n) if n == "naïve")));
+    }
+
+    #[test]
+    fn block_comment_ditangani() {
+        let (tokens, diags) = Lexer::new("a /* ini komentar */ b").tokenize();
+        assert!(diags.is_empty());
+        let idents: Vec<_> = tokens
+            .iter()
+            .filter_map(|t| match &t.kind {
+                TokenKind::Ident(n) => Some(n.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(idents, vec!["a".to_string(), "b".to_string()]);
+    }
+
+    #[test]
+    fn block_comment_tak_terterminasi_error() {
+        let (_tokens, diags) = Lexer::new("a /* belum tutup").tokenize();
+        assert!(diags.iter().any(|d| d.message.contains("komentar blok")));
+    }
+
+    #[test]
+    fn simbol_tak_dikenal_jadi_error() {
+        let (tokens, diags) = Lexer::new("let x = $;").tokenize();
+        assert!(
+            diags.iter().any(|d| d.message.contains("tak dikenal")),
+            "simbol `$` harus error, dapat: {:?}",
+            diags
+        );
+        assert!(tokens.iter().any(|t| t.is(&TokenKind::Error)));
+    }
 
     #[test]
     fn expect_hilang_delimiter_error() {

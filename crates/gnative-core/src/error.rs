@@ -27,12 +27,12 @@ pub enum GnError {
 impl fmt::Display for GnError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            GnError::Io(e) => write!(f, "I/O error: {e}"),
-            GnError::Parse(msg) => write!(f, "parse error: {msg}"),
-            GnError::Type(msg) => write!(f, "type error: {msg}"),
-            GnError::BackendUnavailable(msg) => write!(f, "backend unavailable: {msg}"),
-            GnError::Render(msg) => write!(f, "render error: {msg}"),
-            GnError::Config(msg) => write!(f, "config error: {msg}"),
+            GnError::Io(e) => write!(f, "kesalahan I/O: {e}"),
+            GnError::Parse(msg) => write!(f, "kesalahan parse: {msg}"),
+            GnError::Type(msg) => write!(f, "kesalahan tipe: {msg}"),
+            GnError::BackendUnavailable(msg) => write!(f, "backend tak tersedia: {msg}"),
+            GnError::Render(msg) => write!(f, "kesalahan render: {msg}"),
+            GnError::Config(msg) => write!(f, "kesalahan konfigurasi: {msg}"),
             GnError::Other(msg) => write!(f, "{msg}"),
         }
     }

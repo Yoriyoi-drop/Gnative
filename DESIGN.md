@@ -270,7 +270,7 @@ Native Binary (container/artifacts/<name>)
 | `lower.rs` | AST → Semantic IR (stateless → ekspansi; stateful → definisi + `ComponentInstance` per situs, props disubstitusi, penjaga siklus) |
 | `mir.rs` | MIR: `MirModule`, `MirFunc`, `MirInst` (`Ptr`, `FuncAddr`, `CallIndirect`) |
 | `mir_lower.rs` | IR → MIR (window → build `__gn_build_scene` + `main` dinamis; string → pool; state per instance → `gn_state_*`; method tersalin `Comp__i__m`; klik → `gn_scene_add_button_clickable` + `gn_register_method`) |
-| `codegen/mod.rs` | dispatcher backend (Cranelift dev / LLVM release) |
+| `codegen/mod.rs` | dispatcher backend (Cranelift dev / LLVM release) + `used_intrinsics` (import selektif, P2-06) |
 | `codegen/cranelift.rs` | MIR → object ELF via cranelift-codegen + cranelift-object (termasuk use `gn_state_*`/`gn_register_method`/`gn_window_run_dynamic`, `FuncAddr` + `CallIndirect`) |
 | `codegen/llvm.rs` | MIR → object via inkwell/LLVM 18 (optimasi agresif, multi-target): slot → alloca entry, CFG → basic block |
 | `linker.rs` | object `.gn` + libruntime → binary native via `cc` |
@@ -501,9 +501,9 @@ crates/gnative-compiler/src/ir.rs         → Semantic IR
 crates/gnative-compiler/src/lower.rs      → AST → IR
 crates/gnative-compiler/src/mir.rs        → MIR
 crates/gnative-compiler/src/mir_lower.rs  → IR → MIR
-crates/gnative-compiler/src/codegen/mod.rs      → dispatcher backend (+ target)
+crates/gnative-compiler/src/codegen/mod.rs      → dispatcher backend (+ target) + `used_intrinsics` (deklarasi import selektif)
 crates/gnative-compiler/src/codegen/cranelift.rs→ MIR → object (dev, multi-target via `lookup_by_name`)
-crates/gnative-compiler/src/codegen/llvm.rs     → MIR → object (release, stub)
+crates/gnative-compiler/src/codegen/llvm.rs     → MIR → object (release, inkwell/LLVM 18)
 crates/gnative-compiler/src/linker.rs     → object + libruntime → binary
 crates/gnative-compiler/src/pipeline.rs   → orkestrasi build (+ `validate` untuk check)
 crates/gnative-compiler/runtime/@gnative/ui/ui.gn → runtime UI bawaan (.gn)
@@ -528,7 +528,8 @@ crates/gnative-runtime/src/backend_select.rs→ fallback chain wgpu→cuda
 crates/gnative-runtime/src/intrinsics.rs    → C-ABI gn_window_* + gn_scene_*
 crates/gnative-runtime/src/state_store.rs   → C-ABI gn_state_set/get_* (state komponen)
 
-crates/gnative-cli/src/lib.rs        → run() CLI
+crates/gnative-cli/src/lib.rs        → run() CLI (+ flag global `--verbose`)
+crates/gnative-cli/src/log.rs        → log CLI berlevel (info/debug/warn/error)
 crates/gnative-cli/src/cmd/mod.rs    → dispatch + help
 crates/gnative-cli/src/cmd/*.rs      → satu perintah per file
   (new, build, run, check, clean, graph, doctor, container,

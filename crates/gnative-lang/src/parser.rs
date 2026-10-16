@@ -528,13 +528,17 @@ impl Parser {
             self.expect(&TokenKind::RBrace, "}");
             let mut else_branch = Vec::new();
             if self.eat(&TokenKind::Else).is_some() {
-                if self.eat(&TokenKind::If).is_some() {
-                    // else-if: parse sebagai If bersarang.
-                    self.pos = self.pos.saturating_sub(1);
+                if self.check(&TokenKind::If) {
+                    // `else if (…) {…}` → If bersarang sebagai satu statement
+                    // di dalam else_branch (P2-03: tanpa hack `pos -= 1`).
+                    if let Some(nested) = self.parse_stmt() {
+                        else_branch.push(nested);
+                    }
+                } else {
+                    self.expect(&TokenKind::LBrace, "{");
+                    else_branch = self.parse_stmts_until_rbrace();
+                    self.expect(&TokenKind::RBrace, "}");
                 }
-                self.expect(&TokenKind::LBrace, "{");
-                else_branch = self.parse_stmts_until_rbrace();
-                self.expect(&TokenKind::RBrace, "}");
             }
             return Some(Stmt::If {
                 cond,
@@ -544,6 +548,8 @@ impl Parser {
             });
         }
         if self.check(&TokenKind::For) {
+            // Hanya `for (x of iterable) { … }` yang didukung; `for..in` dan
+            // `for(;;)` gaya-C belum ada (P2-03). Token `of` wajib.
             let start = self.bump().span;
             self.expect(&TokenKind::LParen, "(");
             let var = self.expect_ident("variabel loop")?;
@@ -1134,5 +1140,31 @@ mod tests {
         let mut parser = Parser::new(Vec::new());
         let m = parser.parse_module();
         assert!(m.decls.is_empty());
+    }
+
+    // --- P2-03: else-if tanpa hack pos -= 1 ---
+
+    #[test]
+    fn else_if_terparse_benar() {
+        let m = parse(
+            "function f(): number {\n\
+               if (a) { return 1; }\n\
+               else if (b) { return 2; }\n\
+               else { return 3; }\n\
+             }",
+        );
+        match &m.decls[0] {
+            Decl::Function(f) => match &f.body[0] {
+                Stmt::If { else_branch, .. } => {
+                    assert_eq!(else_branch.len(), 1, "else harus berisi satu If");
+                    assert!(
+                        matches!(&else_branch[0], Stmt::If { .. }),
+                        "else-if harus jadi If bersarang"
+                    );
+                }
+                other => panic!("harusnya Stmt::If, dapat {other:?}"),
+            },
+            _ => panic!("harusnya function"),
+        }
     }
 }

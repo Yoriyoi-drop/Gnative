@@ -77,6 +77,10 @@ pub enum TokenKind {
     Bang,
     At,
 
+    /// Token tak dikenal (mis. `$`, `#`, `~`, emoji). Selalu disertai
+    /// diagnostic leksikal; parser menanganinya sebagai error, bukan panic.
+    Error,
+
     Eof,
 }
 
@@ -87,6 +91,8 @@ impl TokenKind {
             TokenKind::Ident(name) => format!("identifier `{name}`"),
             TokenKind::Number(n) => format!("number `{n}`"),
             TokenKind::String(s) => format!("string `{s}`"),
+            TokenKind::Template(s) => format!("template `{s}`"),
+            TokenKind::Error => "token tak dikenal".to_string(),
             TokenKind::Eof => "end of file".to_string(),
             other => format!("`{other:?}`"),
         }

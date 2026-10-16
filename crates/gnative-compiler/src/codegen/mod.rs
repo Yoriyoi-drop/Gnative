@@ -9,11 +9,39 @@
 pub mod cranelift;
 pub mod llvm;
 
+use std::collections::HashSet;
 use std::path::Path;
 
 use gnative_core::{GnError, GnResult};
 
-use crate::mir::MirModule;
+use crate::mir::{MirInst, MirModule};
+
+/// Nama intrinsik runtime yang benar-benar dipakai modul MIR (P2-06).
+///
+/// Dipakai backend agar **hanya** mendeklarasikan import yang diperlukan:
+/// object fungsi murni (tanpa UI) jadi bebas referensi `gn_*`/`puts`.
+pub fn used_intrinsics(mir: &MirModule) -> HashSet<String> {
+    let mut used = HashSet::new();
+    for f in &mir.funcs {
+        for inst in &f.body {
+            match inst {
+                // `Call.callee` mencakup `puts` + semua intrinsik `gn_*` yang
+                // dipanggil langsung (scene builder, state, register, run).
+                MirInst::Call { callee, .. } => {
+                    used.insert(callee.clone());
+                }
+                MirInst::WindowCreate { .. } => {
+                    used.insert("gn_window_create".to_string());
+                }
+                MirInst::WindowRun(_) => {
+                    used.insert("gn_window_run".to_string());
+                }
+                _ => {}
+            }
+        }
+    }
+    used
+}
 
 /// Mode build → pemilihan backend.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,4 +92,51 @@ pub fn codegen(mode: BuildMode, target: Option<&str>, mir: &MirModule, out: &Pat
     backend
         .codegen(mir, target, out)
         .map_err(|e| GnError::Other(format!("codegen ({}) gagal: {e}", backend.name())))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mir::{MirFunc, MirInst, MirTy};
+
+    #[test]
+    fn fungsi_murni_tanpa_intrinsik() {
+        let mir = MirModule {
+            strings: vec![],
+            funcs: vec![MirFunc {
+                name: "main".into(),
+                params: vec![],
+                ret: MirTy::Void,
+                body: vec![MirInst::Ret(None)],
+            }],
+        };
+        assert!(used_intrinsics(&mir).is_empty());
+    }
+
+    #[test]
+    fn intrinsik_window_terdeteksi() {
+        let mir = MirModule {
+            strings: vec!["t".into()],
+            funcs: vec![MirFunc {
+                name: "main".into(),
+                params: vec![],
+                ret: MirTy::Void,
+                body: vec![
+                    MirInst::StrAddr(0),
+                    MirInst::WindowCreate {
+                        title: 0,
+                        title_len: 1,
+                        width: 1,
+                        height: 1,
+                    },
+                    MirInst::WindowRun(1),
+                    MirInst::Ret(None),
+                ],
+            }],
+        };
+        let used = used_intrinsics(&mir);
+        assert!(used.contains("gn_window_create"));
+        assert!(used.contains("gn_window_run"));
+        assert!(!used.contains("gn_scene_create"));
+    }
 }

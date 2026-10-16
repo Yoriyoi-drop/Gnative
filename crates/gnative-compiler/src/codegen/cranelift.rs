@@ -72,191 +72,146 @@ impl CodegenBackend for CraneliftBackend {
         let mut module = ObjectModule::new(obj_builder);
 
         // 3. Intrinsik (`use` C-ABI dari libruntime + libc).
+        // P2-06: hanya deklarasikan intrinsik yang benar-benar dipakai MIR,
+        // sehingga object fungsi murni (tanpa UI) bebas referensi runtime.
         let pointer = module.target_config().pointer_type();
-        let puts_id = declare_import(
-            &mut module,
-            "puts",
-            &[AbiParam::new(pointer)],
-            &[AbiParam::new(types::I32)],
-        )?;
-        let window_create_id = declare_import(
-            &mut module,
-            "gn_window_create",
-            &[
-                AbiParam::new(pointer),
-                AbiParam::new(types::I64), // title_len (usize)
-                AbiParam::new(types::I32), // width
-                AbiParam::new(types::I32), // height
-            ],
-            &[AbiParam::new(types::I32)], // handle
-        )?;
-        let window_run_id = declare_import(
-            &mut module,
-            "gn_window_run",
-            &[AbiParam::new(types::I32)], // handle
-            &[AbiParam::new(types::I32)],
-        )?;
+        let specs: [(&str, Vec<AbiParam>, Vec<AbiParam>); 19] = [
+            (
+                "puts",
+                vec![AbiParam::new(pointer)],
+                vec![AbiParam::new(types::I32)],
+            ),
+            (
+                "gn_window_create",
+                vec![
+                    AbiParam::new(pointer),
+                    AbiParam::new(types::I64), // title_len (usize)
+                    AbiParam::new(types::I32), // width
+                    AbiParam::new(types::I32), // height
+                ],
+                vec![AbiParam::new(types::I32)], // handle
+            ),
+            (
+                "gn_window_run",
+                vec![AbiParam::new(types::I32)], // handle
+                vec![AbiParam::new(types::I32)],
+            ),
+            ("gn_scene_create", vec![], vec![AbiParam::new(types::I64)]),
+            (
+                "gn_scene_add_text",
+                vec![
+                    AbiParam::new(types::I64),
+                    AbiParam::new(pointer),
+                    AbiParam::new(types::F64),
+                ],
+                vec![],
+            ),
+            (
+                "gn_scene_add_button",
+                vec![AbiParam::new(types::I64), AbiParam::new(pointer)],
+                vec![],
+            ),
+            (
+                "gn_scene_add_input",
+                vec![AbiParam::new(types::I64), AbiParam::new(pointer)],
+                vec![],
+            ),
+            (
+                "gn_scene_begin_vstack",
+                vec![AbiParam::new(types::I64), AbiParam::new(types::F64)],
+                vec![],
+            ),
+            (
+                "gn_scene_end_vstack",
+                vec![AbiParam::new(types::I64)],
+                vec![],
+            ),
+            (
+                "gn_window_run_scene",
+                vec![AbiParam::new(types::I64)],
+                vec![AbiParam::new(types::I32)],
+            ),
+            (
+                "gn_state_set_f64",
+                vec![
+                    AbiParam::new(pointer),
+                    AbiParam::new(pointer),
+                    AbiParam::new(types::F64),
+                ],
+                vec![],
+            ),
+            (
+                "gn_state_get_f64",
+                vec![AbiParam::new(pointer), AbiParam::new(pointer)],
+                vec![AbiParam::new(types::F64)],
+            ),
+            (
+                "gn_state_set_bool",
+                vec![
+                    AbiParam::new(pointer),
+                    AbiParam::new(pointer),
+                    AbiParam::new(types::I8),
+                ],
+                vec![],
+            ),
+            (
+                "gn_state_get_bool",
+                vec![AbiParam::new(pointer), AbiParam::new(pointer)],
+                vec![AbiParam::new(types::I8)],
+            ),
+            (
+                "gn_state_set_str",
+                vec![
+                    AbiParam::new(pointer),
+                    AbiParam::new(pointer),
+                    AbiParam::new(pointer),
+                ],
+                vec![],
+            ),
+            (
+                "gn_state_get_str",
+                vec![AbiParam::new(pointer), AbiParam::new(pointer)],
+                vec![AbiParam::new(pointer)],
+            ),
+            (
+                "gn_scene_add_button_clickable",
+                vec![
+                    AbiParam::new(types::I64),
+                    AbiParam::new(pointer),
+                    AbiParam::new(pointer),
+                    AbiParam::new(pointer),
+                ],
+                vec![],
+            ),
+            (
+                "gn_register_method",
+                vec![
+                    AbiParam::new(pointer),
+                    AbiParam::new(pointer),
+                    AbiParam::new(pointer),
+                ],
+                vec![],
+            ),
+            (
+                "gn_window_run_dynamic",
+                vec![AbiParam::new(pointer)], // fungsi build
+                vec![AbiParam::new(types::I32)],
+            ),
+        ];
 
-        // Intrinsik pembangun Scene (dari binary `.gn` → runtime).
-        let scene_create_id = declare_import(
-            &mut module,
-            "gn_scene_create",
-            &[],
-            &[AbiParam::new(types::I64)], // handle
-        )?;
-        let scene_add_text_id = declare_import(
-            &mut module,
-            "gn_scene_add_text",
-            &[
-                AbiParam::new(types::I64),
-                AbiParam::new(pointer),
-                AbiParam::new(types::F64),
-            ],
-            &[],
-        )?;
-        let scene_add_button_id = declare_import(
-            &mut module,
-            "gn_scene_add_button",
-            &[AbiParam::new(types::I64), AbiParam::new(pointer)],
-            &[],
-        )?;
-        let scene_add_input_id = declare_import(
-            &mut module,
-            "gn_scene_add_input",
-            &[AbiParam::new(types::I64), AbiParam::new(pointer)],
-            &[],
-        )?;
-        let scene_begin_vstack_id = declare_import(
-            &mut module,
-            "gn_scene_begin_vstack",
-            &[AbiParam::new(types::I64), AbiParam::new(types::F64)],
-            &[],
-        )?;
-        let scene_end_vstack_id = declare_import(
-            &mut module,
-            "gn_scene_end_vstack",
-            &[AbiParam::new(types::I64)],
-            &[],
-        )?;
-        let window_run_scene_id = declare_import(
-            &mut module,
-            "gn_window_run_scene",
-            &[AbiParam::new(types::I64)], // scene handle
-            &[AbiParam::new(types::I32)],
-        )?;
-
-        // State komponen (`state_store` runtime): get/set per tipe.
-        let state_set_f64_id = declare_import(
-            &mut module,
-            "gn_state_set_f64",
-            &[
-                AbiParam::new(pointer),
-                AbiParam::new(pointer),
-                AbiParam::new(types::F64),
-            ],
-            &[],
-        )?;
-        let state_get_f64_id = declare_import(
-            &mut module,
-            "gn_state_get_f64",
-            &[AbiParam::new(pointer), AbiParam::new(pointer)],
-            &[AbiParam::new(types::F64)],
-        )?;
-        let state_set_bool_id = declare_import(
-            &mut module,
-            "gn_state_set_bool",
-            &[
-                AbiParam::new(pointer),
-                AbiParam::new(pointer),
-                AbiParam::new(types::I8),
-            ],
-            &[],
-        )?;
-        let state_get_bool_id = declare_import(
-            &mut module,
-            "gn_state_get_bool",
-            &[AbiParam::new(pointer), AbiParam::new(pointer)],
-            &[AbiParam::new(types::I8)],
-        )?;
-        let state_set_str_id = declare_import(
-            &mut module,
-            "gn_state_set_str",
-            &[
-                AbiParam::new(pointer),
-                AbiParam::new(pointer),
-                AbiParam::new(pointer),
-            ],
-            &[],
-        )?;
-        let state_get_str_id = declare_import(
-            &mut module,
-            "gn_state_get_str",
-            &[AbiParam::new(pointer), AbiParam::new(pointer)],
-            &[AbiParam::new(pointer)],
-        )?;
-
-        // Klik + rebuild dinamis: tombol clickable, registrasi method,
-        // run dengan fungsi build (`__gn_build_scene` dari binary).
-        let scene_add_button_clickable_id = declare_import(
-            &mut module,
-            "gn_scene_add_button_clickable",
-            &[
-                AbiParam::new(types::I64),
-                AbiParam::new(pointer),
-                AbiParam::new(pointer),
-                AbiParam::new(pointer),
-            ],
-            &[],
-        )?;
-        let register_method_id = declare_import(
-            &mut module,
-            "gn_register_method",
-            &[
-                AbiParam::new(pointer),
-                AbiParam::new(pointer),
-                AbiParam::new(pointer),
-            ],
-            &[],
-        )?;
-        let window_run_dynamic_id = declare_import(
-            &mut module,
-            "gn_window_run_dynamic",
-            &[AbiParam::new(pointer)], // fungsi build
-            &[AbiParam::new(types::I32)],
-        )?;
-
-        // Map nama intrinsik runtime → FuncId + tipe return (untuk codegen Call).
+        let used = crate::codegen::used_intrinsics(mir);
         let mut runtime_ids: HashMap<String, cranelift_module::FuncId> = HashMap::new();
         let mut runtime_ret_clif: HashMap<String, types::Type> = HashMap::new();
-        runtime_ids.insert("puts".into(), puts_id);
-        runtime_ids.insert("gn_window_create".into(), window_create_id);
-        runtime_ids.insert("gn_window_run".into(), window_run_id);
-        runtime_ids.insert("gn_scene_create".into(), scene_create_id);
-        runtime_ids.insert("gn_scene_add_text".into(), scene_add_text_id);
-        runtime_ids.insert("gn_scene_add_button".into(), scene_add_button_id);
-        runtime_ids.insert("gn_scene_add_input".into(), scene_add_input_id);
-        runtime_ids.insert("gn_scene_begin_vstack".into(), scene_begin_vstack_id);
-        runtime_ids.insert("gn_scene_end_vstack".into(), scene_end_vstack_id);
-        runtime_ids.insert("gn_window_run_scene".into(), window_run_scene_id);
-        runtime_ids.insert("gn_state_set_f64".into(), state_set_f64_id);
-        runtime_ids.insert("gn_state_get_f64".into(), state_get_f64_id);
-        runtime_ids.insert("gn_state_set_bool".into(), state_set_bool_id);
-        runtime_ids.insert("gn_state_get_bool".into(), state_get_bool_id);
-        runtime_ids.insert("gn_state_set_str".into(), state_set_str_id);
-        runtime_ids.insert("gn_state_get_str".into(), state_get_str_id);
-        runtime_ids.insert(
-            "gn_scene_add_button_clickable".into(),
-            scene_add_button_clickable_id,
-        );
-        runtime_ids.insert("gn_register_method".into(), register_method_id);
-        runtime_ids.insert("gn_window_run_dynamic".into(), window_run_dynamic_id);
-        runtime_ret_clif.insert("gn_scene_create".into(), types::I64);
-        runtime_ret_clif.insert("gn_window_run_scene".into(), types::I32);
-        runtime_ret_clif.insert("gn_window_create".into(), types::I32);
-        runtime_ret_clif.insert("gn_state_get_f64".into(), types::F64);
-        runtime_ret_clif.insert("gn_state_get_bool".into(), types::I8);
-        runtime_ret_clif.insert("gn_state_get_str".into(), pointer);
-        runtime_ret_clif.insert("gn_window_run_dynamic".into(), types::I32);
+        for (name, params, rets) in &specs {
+            if !used.contains(*name) {
+                continue;
+            }
+            let id = declare_import(&mut module, name, params, rets)?;
+            runtime_ids.insert((*name).to_string(), id);
+            if let Some(r) = rets.first() {
+                runtime_ret_clif.insert((*name).to_string(), r.value_type);
+            }
+        }
 
         // 4. String pool → data objects (C string null-terminated).
         let mut data_ids = Vec::new();
@@ -407,8 +362,9 @@ fn compile_function(
         let fref = module.declare_func_in_func(*id, builder.func);
         runtime_funcs.insert(name.clone(), fref);
     }
-    let local_create = runtime_funcs["gn_window_create"];
-    let local_run = runtime_funcs["gn_window_run"];
+    // Intrinsik window opsional: hanya ada bila MIR memakainya (P2-06).
+    let local_create = runtime_funcs.get("gn_window_create").copied();
+    let local_run = runtime_funcs.get("gn_window_run").copied();
     let target_config = module.target_config();
 
     let mut cg = FuncCodegen {
@@ -456,8 +412,8 @@ struct FuncCodegen<'a> {
     runtime_funcs: HashMap<String, cranelift_codegen::ir::FuncRef>,
     /// Nama intrinsik runtime → tipe return Cranelift.
     runtime_ret_clif: HashMap<String, types::Type>,
-    local_create: cranelift_codegen::ir::FuncRef,
-    local_run: cranelift_codegen::ir::FuncRef,
+    local_create: Option<cranelift_codegen::ir::FuncRef>,
+    local_run: Option<cranelift_codegen::ir::FuncRef>,
     data_ids: &'a [cranelift_module::DataId],
     pointer: types::Type,
     /// slot MIR → Variable (hasil instruksi).
@@ -719,20 +675,28 @@ impl<'a> FuncCodegen<'a> {
             }
             MirInst::WindowCreate {
                 title,
+                title_len,
                 width,
                 height,
             } => {
+                let create = self.local_create.ok_or_else(|| {
+                    GnError::Other("gn_window_create tidak dideklarasikan (invalid MIR)".into())
+                })?;
                 let t = self.use_slot(*title);
-                let len = self.builder.ins().iconst(types::I64, 0); // len diabaikan (C-string)
+                // P2-06: pakai panjang judul sebenarnya (0 = dinamis).
+                let len = self.builder.ins().iconst(types::I64, i64::from(*title_len));
                 let w = self.builder.ins().iconst(types::I32, i64::from(*width));
                 let h = self.builder.ins().iconst(types::I32, i64::from(*height));
-                let inst = self.builder.ins().call(self.local_create, &[t, len, w, h]);
+                let inst = self.builder.ins().call(create, &[t, len, w, h]);
                 let handle = self.builder.inst_results(inst)[0];
                 self.def_slot_raw(slot, handle, types::I32);
             }
             MirInst::WindowRun(handle) => {
+                let run = self.local_run.ok_or_else(|| {
+                    GnError::Other("gn_window_run tidak dideklarasikan (invalid MIR)".into())
+                })?;
                 let h = self.use_slot(*handle);
-                self.builder.ins().call(self.local_run, &[h]);
+                self.builder.ins().call(run, &[h]);
             }
             MirInst::FuncAddr { func } => {
                 // Alamat fungsi se-object (untuk registrasi handler/build).
@@ -887,6 +851,7 @@ mod tests {
                     MirInst::StrAddr(0), // slot 0: title ptr
                     MirInst::WindowCreate {
                         title: 0,
+                        title_len: 4,
                         width: 800,
                         height: 600,
                     }, // slot 1: handle
@@ -906,6 +871,39 @@ mod tests {
         let bytes = std::fs::read(&out).unwrap();
         // ELF magic 0x7f 'E' 'L' 'F'
         assert_eq!(&bytes[0..4], b"\x7fELF");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn object_fungsi_murni_tanpa_intrinsik() {
+        // P2-06: fungsi murni (tanpa UI) → object tanpa referensi intrinsik.
+        let mir = MirModule {
+            strings: vec![],
+            funcs: vec![MirFunc {
+                name: "main".into(),
+                params: vec![],
+                ret: MirTy::Void,
+                body: vec![MirInst::Ret(None)],
+            }],
+        };
+        let dir = std::env::temp_dir().join(format!("gnative-clpure-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("pure.o");
+        CraneliftBackend
+            .codegen(&mir, None, &out)
+            .expect("codegen sukses");
+        let text = String::from_utf8_lossy(&std::fs::read(&out).unwrap()).into_owned();
+        for sym in [
+            "gn_window_create",
+            "gn_scene_create",
+            "gn_window_run_dynamic",
+        ] {
+            assert!(
+                !text.contains(sym),
+                "object fungsi murni tak boleh mereferensikan `{sym}`"
+            );
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 

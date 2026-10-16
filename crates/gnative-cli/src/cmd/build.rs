@@ -5,14 +5,21 @@ use std::path::Path;
 
 use gnative_compiler::BuildMode;
 
+use crate::log;
+
 pub fn run(args: &[String]) -> i32 {
     let mode = BuildMode::from_args(args);
     let target = BuildMode::target_from_args(args).filter(|t| !t.is_empty());
     let project = Path::new(".");
+    log::debug(format!(
+        "build: mode={:?}, target={}",
+        mode,
+        target.as_deref().unwrap_or("host")
+    ));
     match gnative_compiler::build_with_target(project, mode, target.as_deref()) {
         Ok(report) => {
             for d in &report.diagnostics {
-                eprintln!("  {d}");
+                log::warn(d);
             }
             println!(
                 "build selesai: {} file diproses, {} cache hit{}{}",
@@ -32,14 +39,14 @@ pub fn run(args: &[String]) -> i32 {
                 return 1;
             }
             if let Some(obj) = &report.object_file {
-                println!("  object: {}", obj.display());
+                log::debug(format!("object: {}", obj.display()));
             }
             // P1-12: build tanpa binary = sukses semu. Gagalkan dengan jelas
             // (fresh checkout tanpa libruntime harus exit non-0).
             let Some(bin) = &report.binary else {
-                eprintln!(
+                log::error(
                     "build gagal: binary native tidak dihasilkan \
-                     (libruntime belum dibangun? jalankan `cargo build -p gnative-runtime`)"
+                     (libruntime belum dibangun? jalankan `cargo build -p gnative-runtime`)",
                 );
                 return 1;
             };
@@ -47,7 +54,7 @@ pub fn run(args: &[String]) -> i32 {
             0
         }
         Err(e) => {
-            eprintln!("build gagal: {e}");
+            log::error(format!("build gagal: {e}"));
             1
         }
     }

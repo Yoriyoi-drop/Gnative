@@ -3,11 +3,29 @@
 //! Antarmuka baris perintah Gnative. Satu perintah = satu file di `cmd/`.
 
 pub mod cmd;
+pub mod log;
 
 /// Jalankan CLI; kembalikan exit code.
 ///
 /// `args` = argumen setelah nama program.
 pub fn run(args: Vec<String>) -> i32 {
+    // Flag global `--verbose`/`-v` dikonsumsi di sini (bukan diteruskan ke
+    // perintah), lalu sisanya di-dispatch.
+    let mut verbose = false;
+    let args: Vec<String> = args
+        .into_iter()
+        .filter(|a| {
+            if a == "--verbose" || a == "-v" {
+                verbose = true;
+                false
+            } else {
+                true
+            }
+        })
+        .collect();
+    if verbose {
+        log::set_verbose();
+    }
     cmd::dispatch(args)
 }
 
@@ -48,5 +66,18 @@ mod tests {
             ]),
             1
         );
+    }
+
+    #[test]
+    fn verbose_tidak_mengganggu_help() {
+        // P2-14: flag global `--verbose` tidak boleh mengganggu dispatch.
+        assert_eq!(run(vec!["--verbose".into(), "help".into()]), 0);
+    }
+
+    #[test]
+    fn doctor_selesai_tanpa_panic() {
+        // Doctor selalu selesai dengan exit 0/1 (tergantung environment).
+        let code = run(vec!["doctor".into()]);
+        assert!(code == 0 || code == 1, "exit code doctor: {code}");
     }
 }

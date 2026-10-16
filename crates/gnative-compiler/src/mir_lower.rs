@@ -196,10 +196,17 @@ pub fn lower_mir(ir: &IrModule) -> MirModule {
 
         // Judul window (ekspresi string — literal atau hasil Call).
         let title_slot = lowerer.lower_expr(&window.title, &mut body);
+        // Panjang judul: diketahui bila literal, `0` (runtime: C-string
+        // berbatas) bila dinamis — P2-06, jangan kirim len=0 buta.
+        let title_len = match &window.title {
+            crate::ir::IrExpr::Str(s) => s.len() as u32,
+            _ => 0,
+        };
         // Simpan config window (intrinsik runtime wgpu/cuda).
         let _handle = lowerer.push(
             MirInst::WindowCreate {
                 title: title_slot,
+                title_len,
                 width: w as u32,
                 height: h as u32,
             },
@@ -284,10 +291,17 @@ struct Lowerer<'a> {
     current_inst: Option<(String, usize)>,
     next_var: u32,
     next_label: u32,
+    /// Index string pool → intern O(1) (P2-06; sebelumnya scan linier O(n²)).
+    interner: HashMap<String, usize>,
 }
 
 impl<'a> Lowerer<'a> {
     fn new(mir: &'a mut MirModule) -> Self {
+        // Bangun ulang index dari pool yang ada (dipakai lintas fungsi).
+        let mut interner = HashMap::new();
+        for (i, s) in mir.strings.iter().enumerate() {
+            interner.insert(s.clone(), i);
+        }
         Lowerer {
             mir,
             vars: HashMap::new(),
@@ -298,6 +312,7 @@ impl<'a> Lowerer<'a> {
             current_inst: None,
             next_var: 0,
             next_label: 0,
+            interner,
         }
     }
 
@@ -338,13 +353,13 @@ impl<'a> Lowerer<'a> {
 
     /// Masukkan string ke pool; kembalikan index.
     fn intern(&mut self, s: &str) -> usize {
-        match self.mir.strings.iter().position(|p| p == s) {
-            Some(i) => i,
-            None => {
-                self.mir.strings.push(s.to_string());
-                self.mir.strings.len() - 1
-            }
+        if let Some(&i) = self.interner.get(s) {
+            return i;
         }
+        let i = self.mir.strings.len();
+        self.mir.strings.push(s.to_string());
+        self.interner.insert(s.to_string(), i);
+        i
     }
 
     /// Push instruksi; kembalikan slot (index di body).
