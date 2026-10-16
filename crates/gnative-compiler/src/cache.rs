@@ -8,7 +8,10 @@ use std::path::{Path, PathBuf};
 
 use gnative_core::{GnError, GnResult};
 
-use crate::fingerprint::to_hex;
+use crate::fingerprint::{fnv1a, to_hex};
+
+/// Key tetap untuk menyimpan fingerprint build tingkat-project.
+const BUILD_KEY: &str = "__build__";
 
 /// Cache fingerprint sederhana di atas filesystem.
 pub struct Cache {
@@ -35,6 +38,22 @@ impl Cache {
     /// `load_all` (file_stem dari `<key>.hash`).
     pub fn is_fresh(&self, rel_path: &str, target: Option<&str>, fingerprint: u64) -> bool {
         self.entries.get(&cache_key(rel_path, target)) == Some(&to_hex(fingerprint))
+    }
+
+    /// Apakah seluruh build (konten source + versi compiler + mode + target)
+    /// sudah pernah diproduksi dengan fingerprint ini? Jika ya, artefak
+    /// (object/binary) yang ada boleh dipakai ulang tanpa recompute.
+    pub fn is_build_fresh(&self, fingerprint: u64) -> bool {
+        self.entries.get(BUILD_KEY) == Some(&to_hex(fingerprint))
+    }
+
+    /// Catat fingerprint build tingkat-project (untuk skip nyata).
+    pub fn record_build(&mut self, fingerprint: u64) -> GnResult<()> {
+        let hex = to_hex(fingerprint);
+        self.entries.insert(BUILD_KEY.to_string(), hex.clone());
+        let file = self.root.join(format!("{BUILD_KEY}.hash"));
+        std::fs::write(&file, hex).map_err(GnError::Io)?;
+        Ok(())
     }
 
     /// Catat fingerprint baru.
@@ -82,21 +101,16 @@ impl Cache {
     }
 }
 
-/// Key normal dari path source + target (`src/main.gn` @ host →
-/// `src_main.gn`, @ `aarch64-unknown-linux-gnu` → `src_main.gn_aarch64...`).
+/// Key normal dari path source + target.
 ///
-/// Target disertakan agar cache tidak mencampur object arch berbeda.
-/// Key dipakai sebagai lookup internal DAN file_stem dari `<key>.hash`,
-/// sehingga konsisten lintas sesi (record → load_all).
+/// Menggunakan hash FNV dari `rel_path` (bukan sanitasi char-per-char)
+/// sehingga bebas tabrakan: `a/b.gn`, `a b.gn`, `a\b.gn` menghasilkan key
+/// berbeda (sanitasi lama memetakan ketiganya ke `a_b.gn`). Target
+/// disertakan agar cache tidak mencampur object arch berbeda. Key dipakai
+/// sebagai lookup internal DAN file_stem dari `<key>.hash`, sehingga
+/// konsisten lintas sesi (record → load_all).
 pub fn cache_key(rel_path: &str, target: Option<&str>) -> String {
-    let mut name = String::with_capacity(rel_path.len() + 16);
-    for c in rel_path.chars() {
-        if c.is_ascii_alphanumeric() || c == '.' || c == '-' {
-            name.push(c);
-        } else {
-            name.push('_');
-        }
-    }
+    let mut name = to_hex(fnv1a(rel_path.as_bytes()));
     if let Some(t) = target {
         name.push('_');
         for c in t.chars() {
@@ -129,6 +143,29 @@ mod tests {
             .record("src/main.gn", Some("aarch64-unknown-linux-gnu"), 42)
             .unwrap();
         assert!(cache.is_fresh("src/main.gn", Some("aarch64-unknown-linux-gnu"), 42));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cache_key_tidak_bertabrakan() {
+        // Path yang disanitasi lama bertabrakan kini harus berbeda.
+        let keys: Vec<String> = ["src/main.gn", "src main.gn", "src\\main.gn", "src_main.gn"]
+            .iter()
+            .map(|p| cache_key(p, None))
+            .collect();
+        let unique: std::collections::HashSet<_> = keys.iter().cloned().collect();
+        assert_eq!(unique.len(), keys.len(), "cache_key bertabrakan: {keys:?}");
+    }
+
+    #[test]
+    fn build_fresh_dan_record() {
+        let dir = std::env::temp_dir().join(format!("gnative-build-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut cache = Cache::open(&dir).unwrap();
+        assert!(!cache.is_build_fresh(99));
+        cache.record_build(99).unwrap();
+        assert!(cache.is_build_fresh(99));
+        assert!(!cache.is_build_fresh(100));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -21,7 +21,7 @@ use gnative_lang::parse_source;
 
 use crate::cache::Cache;
 use crate::codegen::BuildMode;
-use crate::fingerprint::source_fingerprint;
+use crate::fingerprint::{fnv1a_seeded, source_fingerprint};
 use crate::ir::IrModule;
 use crate::linker;
 use crate::lower::lower;
@@ -62,6 +62,28 @@ pub fn build_with_target(
     mode: BuildMode,
     target: Option<&str>,
 ) -> GnResult<BuildReport> {
+    let config = crate::config::Config::load(&project_dir.join("gnative.toml"))?;
+    let container = project_dir.join("container");
+    let artifacts = container.join("artifacts");
+    std::fs::create_dir_all(&artifacts).map_err(GnError::Io)?;
+
+    // Coba cache hit tingkat-project: jika semua input build tak berubah
+    // (konten source + versi compiler + mode + target + runtime bawaan),
+    // lewati parse/check/lower/codegen/link dan pakai artefak yang ada.
+    let (build_key, file_count) = build_fingerprint(project_dir, mode, target)?;
+    let cache = Cache::open(&container)?;
+    let obj_name = sanitize_name(&config.project_name);
+    let object_file = artifacts.join(format!("{obj_name}.o"));
+    if cache.is_build_fresh(build_key) && object_file.exists() {
+        let binary = artifacts.join(&obj_name);
+        return Ok(BuildReport {
+            object_file: Some(object_file.clone()),
+            binary: if binary.exists() { Some(binary) } else { None },
+            cache_hits: file_count,
+            ..Default::default()
+        });
+    }
+
     let (mut parsed, mut cache) = collect_and_lower(project_dir, target)?;
     if parsed.report.has_errors {
         return Ok(parsed.report);
@@ -111,6 +133,13 @@ pub fn build_with_target(
                     .into(),
             );
         }
+    }
+
+    // Catat fingerprint build tingkat-project HANYA bila sukses (object ada
+    // dan tak ada error). Build gagal tak di-cache agar build berikutnya
+    // benar-benar mengulang, bukan melaporkan sukses palsu via cache hit.
+    if !parsed.report.has_errors {
+        cache.record_build(build_key)?;
     }
 
     Ok(parsed.report)
@@ -218,6 +247,68 @@ fn collect_and_lower(project_dir: &Path, target: Option<&str>) -> GnResult<(Pars
         },
         cache,
     ))
+}
+
+/// Kumpulkan semua file `.gn` yang masuk pipeline (project + runtime bawaan),
+/// diurutkan agar fingerprint deterministik lintas platform.
+fn collect_all_gn(project_dir: &Path) -> GnResult<Vec<PathBuf>> {
+    let src_dir = project_dir.join("src");
+    let container = project_dir.join("container");
+    let mut gn_files = collect_gn_files(&src_dir)?;
+    let runtime_pkg = container.join("packages/@gnative/ui");
+    for f in collect_gn_files(&runtime_pkg)? {
+        if !gn_files.contains(&f) {
+            gn_files.push(f);
+        }
+    }
+    gn_files.sort();
+    Ok(gn_files)
+}
+
+/// Fingerprint build tingkat-project: hash atas (versi compiler + epoch)
+/// × (mode: dev/release) × (target) × (konten + rel-path setiap file `.gn`,
+/// project maupun runtime) × (runtime bawaan di `RUNTIME_DIR`).
+///
+/// Mengubah salah satu — termasuk ganti versi/ABI codegen atau isi runtime
+/// bawaan — membatalkan cache → rebuild penuh (tanpa artefak basi lintas
+/// versi). Dibaca oleh `build_with_target` untuk skip nyata.
+fn build_fingerprint(
+    project_dir: &Path,
+    mode: BuildMode,
+    target: Option<&str>,
+) -> GnResult<(u64, usize)> {
+    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut h = OFFSET;
+    // Versi compiler + epoch — invalidasi saat toolchain/ABI berubah.
+    // Epoch ditanam literal (concat! butuh literal, bukan const).
+    let version = concat!(env!("CARGO_PKG_VERSION"), ":epoch-7");
+    h = fnv1a_seeded(h, version.as_bytes());
+    // Mode codegen (dev = Cranelift, release = LLVM) → output berbeda.
+    let mode_str = match mode {
+        BuildMode::Dev => "dev",
+        BuildMode::Release => "release",
+    };
+    h = fnv1a_seeded(h, mode_str.as_bytes());
+    // Target (host = "").
+    h = fnv1a_seeded(h, target.unwrap_or("").as_bytes());
+
+    let container = project_dir.join("container");
+    seed_runtime(&container)?;
+    let src_dir = project_dir.join("src");
+    let gn_files = collect_all_gn(project_dir)?;
+    for file in &gn_files {
+        let rel = relative_to(file, &src_dir).unwrap_or_else(|| file.display().to_string());
+        h = fnv1a_seeded(h, rel.as_bytes());
+        let source = std::fs::read_to_string(file).map_err(GnError::Io)?;
+        h = fnv1a_seeded(h, source.as_bytes());
+    }
+    // Runtime bawaan compiler (sumber otoritatif) — invalidasi saat berubah
+    // walau copy ter-seed di container belum diperbarui.
+    let runtime_src = Path::new(RUNTIME_DIR).join("@gnative/ui/ui.gn");
+    if let Ok(text) = std::fs::read_to_string(&runtime_src) {
+        h = fnv1a_seeded(h, text.as_bytes());
+    }
+    Ok((h, gn_files.len()))
 }
 
 /// Validasi project: seed + kumpulkan + parse + check + lower (tanpa
@@ -517,9 +608,87 @@ window App {
             assert!(binary.exists(), "binary `{}` ada", binary.display());
         }
 
-        // Build kedua → cache hit untuk semua file.
+        // Build kedua → cache hit tingkat-project (skip nyata: parse/lower/
+        // codegen/link dilewati, artefak dipakai ulang).
         let report2 = build(&dir, BuildMode::Dev).unwrap();
+        assert!(report2.cache_hits > 0, "build kedua harus cache hit");
         assert!(report2.regenerated == 0, "semua file cache hit");
+        assert!(report2.object_file.as_ref().unwrap().exists());
+
+        // Ubah isi source → build ketiga harus rebuild (cache tidak basi).
+        std::fs::write(
+            dir.join("src/main.gn"),
+            r#"use "@gnative/ui";
+window App {
+  title: "Halo2";
+  size: [800, 600];
+  root: <vstack gap={8}>
+    <text content="Hi" size={32} />
+  </vstack>;
+}
+"#,
+        )
+        .unwrap();
+        let report3 = build(&dir, BuildMode::Dev).unwrap();
+        assert!(
+            !report3.has_errors,
+            "diagnostics: {:?}",
+            report3.diagnostics
+        );
+        // Build tingkat-project tidak lagi cache hit; file yang berubah
+        // (main.gn) di-rebuild → `regenerated > 0`.
+        assert!(
+            report3.regenerated > 0,
+            "perubahan source → minimal satu file rebuild"
+        );
+        // Build keempat (tanpa perubahan lagi) → cache hit kembali.
+        let report4 = build(&dir, BuildMode::Dev).unwrap();
+        assert!(report4.cache_hits > 0, "setelah stabil → cache hit lagi");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn build_fingerprint_stabil_dan_sensitif_versi() {
+        let dir = std::env::temp_dir().join(format!("gnative-fp-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        std::fs::write(
+            dir.join("gnative.toml"),
+            crate::config::Config::template("demo"),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("src/main.gn"),
+            r#"use "@gnative/ui"; window App { title: "x"; root: <text content="y"/>; }"#,
+        )
+        .unwrap();
+
+        // Sama input → key sama (deterministik).
+        let (k1, n1) = build_fingerprint(&dir, BuildMode::Dev, None).unwrap();
+        let (k2, n2) = build_fingerprint(&dir, BuildMode::Dev, None).unwrap();
+        assert_eq!(k1, k2);
+        assert_eq!(n1, n2);
+        let base_count = n1;
+
+        // Mode berbeda → key berbeda (flag codegen mengubah output).
+        let (k_rel, _) = build_fingerprint(&dir, BuildMode::Release, None).unwrap();
+        assert_ne!(k1, k_rel, "ganti flag dev→release harus beda key");
+
+        // Target berbeda → key berbeda.
+        let (k_tgt, _) =
+            build_fingerprint(&dir, BuildMode::Dev, Some("aarch64-unknown-linux-gnu")).unwrap();
+        assert_ne!(k1, k_tgt, "ganti target harus beda key");
+
+        // Ubah isi source → key berbeda (invalidasi konten).
+        std::fs::write(
+            dir.join("src/main.gn"),
+            r#"use "@gnative/ui"; window App { title: "z"; root: <text content="y"/>; }"#,
+        )
+        .unwrap();
+        let (k3, n3) = build_fingerprint(&dir, BuildMode::Dev, None).unwrap();
+        assert_ne!(k1, k3, "ubah source harus beda key");
+        assert_eq!(n3, base_count, "jumlah file tetap");
 
         let _ = std::fs::remove_dir_all(&dir);
     }

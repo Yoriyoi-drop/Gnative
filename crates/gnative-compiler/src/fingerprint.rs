@@ -2,7 +2,13 @@
 
 /// Hash FNV-1a 64-bit — cepat, deterministik, tanpa dependency.
 pub fn fnv1a(bytes: &[u8]) -> u64 {
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    fnv1a_seeded(0xcbf2_9ce4_8422_2325, bytes)
+}
+
+/// FNV-1a dengan seed awal (basis offset diganti `seed`) — untuk
+/// menggabungkan beberapa sumber (versi + mode + konten banyak file) ke
+/// dalam satu fingerprint tanpa alokasi buffer besar.
+pub fn fnv1a_seeded(mut hash: u64, bytes: &[u8]) -> u64 {
     for b in bytes {
         hash ^= *b as u64;
         hash = hash.wrapping_mul(0x0000_0100_0000_01b3);

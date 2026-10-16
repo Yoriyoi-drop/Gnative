@@ -535,3 +535,29 @@ changelog + checklist G. Tanpa itu, rilis apa pun harus bukan v1.0.0.
   + `cargo clippy -D warnings` hijau.
 - Status P1-06/07/08: CLOSED (duplikat terdeteksi; error tipe berlokasi; deklarasi
   tak didukung tak lagi hilang diam).
+
+### Iterasi 8 — P0-06 cache incremental nyata + invalidasi versi (16 Okt 2026)
+
+- Masalah: `pipeline.rs` menghitung `cache_hits/regenerated` tapi **selalu**
+  parse+lower+codegen; fingerprint hanya hash konten (`fingerprint.rs`).
+- Perbaikan:
+  - `pipeline.rs`: `build_with_target` kini menghitung fingerprint tingkat-project
+    (`build_fingerprint` = hash versi compiler+epoch × mode × target × konten
+    tiap file `.gn` project+runtime × runtime bawaan di `RUNTIME_DIR`). Jika
+    `Cache::is_build_fresh` true **dan** object ada → lewati parse/check/lower/
+    codegen/link, pakai artefak yang ada (skip nyata). `record_build` hanya
+    dipanggil bila build sukses (tanpa error) agar build gagal tak dipakai
+    cache palsu.
+  - `cache.rs`: `cache_key` kini hash FNV path (bukan sanitasi char) → bebas
+    collision (`a/b.gn`, `a b.gn`, `a\b.gn` kini key berbeda). Tambah
+    `is_build_fresh`/`record_build` dengan key tetap `__build__`.
+  - `fingerprint.rs`: tambah `fnv1a_seeded` untuk menggabungkan hash tanpa
+    alokasi buffer besar.
+- Test: `build_sample_to_binary` kini verifikasi skip nyata (build ke-2 cache
+  hit, ubah source → rebuild, build ke-4 cache hit lagi); `build_fingerprint_*`
+  bukti deterministik + sensitif terhadap mode/target/konten; `cache_key_*`
+  dan `build_fresh_*` di `cache.rs`. `cargo test -p gnative-compiler` 62 lolos;
+  `cargo fmt/clippy -D warnings` hijau; `cargo check --workspace` hijau.
+- Status P0-06: CLOSED (incremental kini benar-benar skip kerja; tak ada artefak
+  basi lintas versi/flag/runtime — epoch dinaikkan bila ABI codegen berubah).
+
