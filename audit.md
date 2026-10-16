@@ -409,7 +409,7 @@ dengan batas yang disebutkan; **PENDING** = belum dikerjakan (sisa Tahap 3/4/5).
 | 13 | `doctor` konsisten dengan linker; tampilkan versi/target/llvm/cuda/libruntime | **PASS** | Iterasi 15 (P2-14); `doctor_selesai_tanpa_panic` + output nyata |
 | 14 | CI minimal aktif (check+clippy+fmt+test) + test CLI + 4 test mati aktif | **PASS\*** | Definisi `ci/ci.yml` lengkap (kini `--all-targets` + `--locked` + provenance); test CLI 7 aktif; **aktivasi tertunda**: token push tak punya scope `workflow`, file ada di `ci/` (lihat `ci/README.md`) |
 | 15 | `Cargo.lock` ter-commit; lisensi + MSRV + changelog + tag RC + checksum | **PASS** | Iterasi 19: lock di-commit (`--locked` di CI), `LICENSE-MIT`/`LICENSE-APACHE`, MSRV 1.80, `CHANGELOG.md`, `SECURITY.md`, `ci/provenance.sh`, tag `v1.0.0-rc.1` |
-| 16 | Quickstart dari env bersih sampai `run` terdokumen + contoh terkompilasi | **PENDING** | Tahap 4: contoh terkompilasi sudah dibuktikan (gate 10); dokumen quickstart dari env bersih + `run` manual (butuh display) belum final |
+| 16 | Quickstart dari env bersih sampai `run` terdokumen + contoh terkompilasi | **PASS** | Iterasi 22: project baru di `.quickdemo` → `gnative build` exit 0 + binary ELF PIE; `gnative run` exit 0, log `[gnative] backend render: wgpu` (timeout 8 s, tanpa panic) pada host X11 + libruntime debug; artefak cleanup dilakukan |
 | 17 | Fitur belum-siap dinyatakan tak didukung + error jelas (CUDA/registry/animasi/font-vektor/multi-window/`%`/`${}`/block-comment) | **PASS** | Iterasi 15/16/17/18; `%` kini **didukung**, `${}`/`/* */`/CUDA dinyatakan + error jelas |
 | 18 | Tidak ada rewrite besar; DESIGN.md diperbarui bila arsitektur berubah | **PASS** | DESIGN.md §4/§5.3/§7.2/§7.5/§10 diperbarui di Iterasi 14–20 |
 | 19 | Ukuran artefak terkendali + terdokumen (strip/split-debug) | **PASS** | Iterasi 20: 207.9 MB → **29.1 MB** (`--strip --split-debug`), `artifact.rs` + README tabel ukuran |
@@ -419,7 +419,8 @@ dengan batas yang disebutkan; **PENDING** = belum dikerjakan (sisa Tahap 3/4/5).
 - Fuzzing terukur (lexer/parser/lower/IR/event/state) — gate 8 masih `PASS*`.
 - Uji resize/HiDPI/overlap visual dengan GPU/display nyata — gate 12 masih `PASS*`.
 - Startup kuantitatif (butuh GPU/display) — ukuran sudah terdokumen (gate 19).
-- Quickstart dari env bersih + `run` manual terdokumentasi — gate 16 `PENDING`.
+- Quickstart dari env bersih + `run` manual terdokumentasi — gate 16 **PASS**
+  (Iterasi 22: build+run nyata, exit 0, log `backend render: wgpu`).
 - Uji instalasi dari artefak (bukan source tree) + aktivasi CI di
   `.github/workflows/` (butuh token ber-scope `workflow`).
 
@@ -938,8 +939,8 @@ dependency baru dari strip).
 (= jumlah `grep -rn "#\[test\]"` = 198; compiler 86, lang 53, runtime 24,
 gfx-wgpu 12, core 11, cli 7, gfx 5).
 
-- Status Tahap 4 (parsial): artefak/ukuran = **selesai**. Sisa Tahap 4:
-  quickstart dari env bersih sampai `run` terdokumentasi (gate 16).
+- Status Tahap 4: artefak/ukuran + quickstart hingga `run` dari env bersih
+  = **selesai** (gate 16 PASS, lihat Iterasi 22).
 
 
 
@@ -972,3 +973,22 @@ gfx-wgpu 12, core 11, cli 7, gfx 5).
 - Status Security gate: naik dari FAIL ke PARTIAL/PASS* (offline) — audit offline
   bekerja jujur (tanpa data palsu), `--live` tersedia; aktivasi CI di GitHub
   masih terpisah (token scope `workflow`, lihat `ci/README.md`).
+
+### Iterasi 22 — Gate 16 quickstart dari env bersih sampai `run` terverifikasi (16 Okt 2026)
+
+- Masalah: quickstart README memakai perintah `gnative ...` yang tidak langsung
+  tersedia pada clean checkout (binary belum ada di PATH) dan `run` manual
+  belum terbukti pada host ini (gate 16 PENDING).
+- Perbaikan:
+  - `README.md` `Mulai Cepat` diformat memakai `cargo run -- ...` agar dapat
+    dijalankan langsung dari checkout bersih tanpa instalasi CLI.
+  - Verifikasi end-to-end (manual, host X11):
+    - Project baru `demo` dibuat dengan `gnative new demo`.
+    - `gnative build` (libruntime debug ditemukan naik dari project ke root repo)
+      → exit 0, `container/artifacts/demo` = ELF 64-bit PIE.
+    - `gnative run` → exit 0 (timeout 8 s) dengan log `[gnative] backend render:
+      wgpu`; proses tidak panic/sigsegv.
+    - Artefak di `.quickdemo` dibersihkan setelah uji.
+- Test: tidak ada perubahan source; `cargo fmt --check`, `cargo clippy
+  --workspace --all-targets -- -D warnings`, `cargo test --workspace` hijau.
+- Status Gate 16: **PASS**.

@@ -31,13 +31,13 @@ cargo build                          # build CLI `gnative`
 cargo run -- help                    # daftar perintah
 cargo run -- new demo && cd demo     # buat project .gn baru
 cargo build -p gnative-runtime       # build libruntime (staticlib: window + wgpu/cuda)
-gnative install                      # install package dari gnative.toml (gaya npm install)
-gnative build                        # src/*.gn → container/artifacts/<nama> (binary native)
-gnative run                          # build lalu buka jendela native (wgpu)
-gnative dev                          # watch: rebuild + restart otomatis tiap perubahan (gaya npm run dev)
-gnative build --target aarch64-unknown-linux-gnu   # cross-compile (Cranelift multi-arch)
-gnative audit              # periksa kerentanan/cela keamanan library yang dipakai
-gnative audit --live       # + basis data CVE langsung (cargo audit/cargo deny)
+cargo run -- install                 # install package dari gnative.toml (gaya npm install)
+cargo run -- build                   # src/*.gn → container/artifacts/<nama> (binary native)
+cargo run -- run                      # build lalu buka jendela native (wgpu)
+cargo run -- dev                      # watch: rebuild + restart otomatis tiap perubahan (gaya npm run dev)
+cargo run -- build --target aarch64-unknown-linux-gnu   # cross-compile (Cranelift multi-arch)
+cargo run -- audit                    # periksa kerentanan/cela keamanan library yang dipakai
+cargo run -- audit --live             # + basis data CVE langsung (cargo audit/cargo deny)
 ```
 
 Perintah CLI gaya npm: `init` (alias `new`), `install`, `list`/`ls`,
