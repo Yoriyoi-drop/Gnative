@@ -645,7 +645,9 @@ impl<'a> FuncCodegen<'a> {
                     MirCmpOp::Eq => IntCC::Equal,
                     MirCmpOp::Ne => IntCC::NotEqual,
                     MirCmpOp::Lt | MirCmpOp::Le | MirCmpOp::Gt | MirCmpOp::Ge => {
-                        unreachable!("relasional hanya untuk f64")
+                        return Err(GnError::Other(
+                            "relasional non-f64 belum didukung (invalid MIR)".into(),
+                        ));
                     }
                 };
                 let v = self.builder.ins().icmp(cc, av, bv);
@@ -658,7 +660,9 @@ impl<'a> FuncCodegen<'a> {
                     MirCmpOp::Eq => IntCC::Equal,
                     MirCmpOp::Ne => IntCC::NotEqual,
                     MirCmpOp::Lt | MirCmpOp::Le | MirCmpOp::Gt | MirCmpOp::Ge => {
-                        unreachable!("relasional string belum didukung")
+                        return Err(GnError::Other(
+                            "relasional non-f64 belum didukung (invalid MIR)".into(),
+                        ));
                     }
                 };
                 // Pointer equality — string di-intern di pool, jadi pointer
@@ -782,7 +786,11 @@ impl<'a> FuncCodegen<'a> {
                 self.builder.ins().brif(c, tb, &[], eb, &[]);
                 self.terminated = true;
             }
-            MirInst::Label(_) => unreachable!("Label ditangani di emit_body"),
+            MirInst::Label(_) => {
+                return Err(GnError::Other(
+                    "Label seharusnya ditangani di emit_body (invalid MIR)".into(),
+                ));
+            }
         }
         Ok(())
     }
@@ -978,6 +986,80 @@ mod tests {
         let backend = CraneliftBackend;
         backend.codegen(&mir, None, &out).expect("codegen sukses");
         assert_eq!(&std::fs::read(&out).unwrap()[0..4], b"\x7fELF");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // --- P0-05: backend Cranelift tidak boleh panic (unreachable) pada input
+    // pengguna; harus mengembalikan Err rapi seperti LLVM untuk op relasional
+    // pada bool/str. ---
+
+    #[test]
+    fn cmp_bool_relasional_ditolak_tanpa_panic() {
+        // CmpBool dengan op Lt (relasional) pada bool → harus Err, bukan panic.
+        let body = vec![
+            MirInst::ConstBool(true),  // slot 0
+            MirInst::ConstBool(false), // slot 1
+            MirInst::CmpBool {
+                op: MirCmpOp::Lt,
+                a: 0,
+                b: 1,
+            }, // slot 2 (invalid)
+            MirInst::Ret(Some(2)),
+        ];
+        let mir = MirModule {
+            strings: vec![],
+            funcs: vec![MirFunc {
+                name: "main".into(),
+                params: vec![],
+                ret: MirTy::Bool,
+                body,
+            }],
+        };
+        let dir = std::env::temp_dir().join(format!("gnative-cl-cmpbool-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("app.o");
+        let backend = CraneliftBackend;
+        let res = backend.codegen(&mir, None, &out);
+        assert!(
+            res.is_err(),
+            "CmpBool relasional harus Err (bukan panic/unreachable)"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cmp_str_relasional_ditolak_tanpa_panic() {
+        // CmpStr dengan op Lt (relasional) pada string → harus Err, bukan panic.
+        let body = vec![
+            MirInst::StrAddr(0), // slot 0
+            MirInst::StrAddr(0), // slot 1
+            MirInst::CmpStr {
+                op: MirCmpOp::Lt,
+                a: 0,
+                b: 1,
+            }, // slot 2 (invalid)
+            MirInst::Ret(Some(2)),
+        ];
+        let mir = MirModule {
+            strings: vec!["x".to_string()],
+            funcs: vec![MirFunc {
+                name: "main".into(),
+                params: vec![],
+                ret: MirTy::Bool,
+                body,
+            }],
+        };
+        let dir = std::env::temp_dir().join(format!("gnative-cl-cmpstr-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("app.o");
+        let backend = CraneliftBackend;
+        let res = backend.codegen(&mir, None, &out);
+        assert!(
+            res.is_err(),
+            "CmpStr relasional harus Err (bukan panic/unreachable)"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

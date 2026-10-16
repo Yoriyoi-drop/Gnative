@@ -473,3 +473,18 @@ changelog + checklist G. Tanpa itu, rilis apa pun harus bukan v1.0.0.
   (tanpa regresi). `cargo fmt --check` + `cargo clippy -D warnings` hijau.
 - Status P0-04: CLOSED (tidak ada coerce diam di jalur sukses; tipe tak didukung
   selalu error; perluasan daftar tipe didukung → P1-05/roadmap bahasa).
+
+### Iterasi 5 — P0-05 validasi MIR seragam antar backend (16 Okt 2026)
+- File: `crates/gnative-compiler/src/codegen/cranelift.rs` (ganti 3 `unreachable!`
+  dengan `return Err(GnError::Other("relasional non-f64 belum didukung (invalid
+  MIR)"))` di `CmpBool`/`CmpStr` relasional dan `Label`; pesan disamakan dengan
+  `llvm.rs:866-870` agar kedua backend berperilaku identik — error rapi, bukan
+  panic/crash pada input pengguna). Tidak ada `unreachable!` tersisa di
+  cranelift.rs.
+- Test: 2 regresi baru (`cmp_bool_relasional_ditolak_tanpa_panic`,
+  `cmp_str_relasional_ditolak_tanpa_panic`) — MIR dengan `<` pada bool/str
+  mengembalikan `Err`, bukan panic. `cargo test -p gnative-compiler` 58 lolos
+  (tanpa regresi). `cargo fmt --check` + `cargo clippy -D warnings` hijau.
+- Status P0-05: CLOSED (matriks op×tipe identik kedua backend; tanpa `unreachable`
+  pada input pengguna; sisa: `slot_vars[&slot]`/`func_ids[callee]` indeks langsung
+  masih Index-panic bila MIR cacat — dicatat backlog P2/validasi MIR).
