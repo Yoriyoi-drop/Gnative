@@ -585,3 +585,24 @@ changelog + checklist G. Tanpa itu, rilis apa pun harus bukan v1.0.0.
 - Status P0-08: CLOSED (semua FFI string berbatas + fn pointer divalidasi
   null; sisa: fuzzer FFI ala P2 — lihat Tahap 3).
 
+### Iterasi 10 — P0-09 sanitasi path traversal (16 Okt 2026)
+
+- Masalah: nama package/dependency dari `gnative.toml`, `use` di `.gn`, dan
+  arg CLI di-`join` tanpa tolak `..`/absolut → tulis/baca di luar root
+  (`install.rs:42`, `resolve.rs:45-48`, `cli/container.rs:46`, `cli/new.rs:13`).
+- Perbaikan:
+  - `gnative-core/path.rs` (baru): `safe_join(root, rel)` menolak path absolut
+    & komponen `..`/root, lalu memastikan hasil (leksikal) tetap di dalam root.
+  - `resolve.rs`: candidate package & import lokal via `safe_join` → `use`
+    ber-`..` jadi `missing`, bukan path liar.
+  - `install.rs`: `dest`/`src` dependency via `safe_join`; nama ditolak →
+    `missing` + pesan.
+  - `cli/container.rs inspect` & `cli/new.rs`: arg pengguna via `safe_join`.
+  - `DESIGN.md`/`lib.rs`: catat modul `path.rs`.
+- Test: `gnative-core` 11 lolos (traversal diterima/ditolak), `resolve`
+  `traversal_ditolak_jadi_missing`, `install` `dependency_traversal_ditolak`;
+  `cargo test -p gnative-compiler` 64 lolos; fmt/clippy/check --workspace hijau.
+- Status P0-09: CLOSED (semua path terkungkung di root project/container;
+  `..`/absolut/separator Windows ditolak dengan error jelas).
+
+

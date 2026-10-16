@@ -3,6 +3,7 @@
 use std::path::Path;
 
 use gnative_compiler::config::Config;
+use gnative_core::safe_join;
 
 pub fn run(args: &[String]) -> i32 {
     let Some(name) = args.first() else {
@@ -10,7 +11,15 @@ pub fn run(args: &[String]) -> i32 {
         return 1;
     };
 
-    let dir = Path::new(name);
+    // `name` dari argv → sanitasi agar project dibuat di cwd, tidak keluar
+    // (P0-09: path traversal, mis. `gnative new ../../tmp/evil`).
+    let dir = match safe_join(Path::new("."), name) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("nama project tidak valid: {e}");
+            return 1;
+        }
+    };
     if dir.exists() {
         eprintln!("direktori `{name}` sudah ada");
         return 1;

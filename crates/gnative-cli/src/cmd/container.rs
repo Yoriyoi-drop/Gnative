@@ -2,6 +2,8 @@
 
 use std::path::Path;
 
+use gnative_core::safe_join;
+
 pub fn run(args: &[String]) -> i32 {
     let Some(sub) = args.first() else {
         print_usage();
@@ -43,7 +45,13 @@ fn inspect(package: Option<&str>) -> i32 {
         eprintln!("pemakaian: gnative container inspect <@scope/name>");
         return 1;
     };
-    let path = container_dir().join("packages").join(package);
+    let path = match safe_join(&container_dir().join("packages"), package) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("package `{package}` tidak valid: {e}");
+            return 1;
+        }
+    };
     if !path.exists() {
         eprintln!("package `{package}` tidak ditemukan di {}", path.display());
         return 1;

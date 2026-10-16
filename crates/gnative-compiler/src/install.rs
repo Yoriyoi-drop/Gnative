@@ -8,7 +8,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use gnative_core::{GnError, GnResult};
+use gnative_core::{safe_join, GnError, GnResult};
 
 use crate::config::Config;
 
@@ -39,12 +39,24 @@ pub fn install(project_dir: &Path) -> GnResult<InstallReport> {
 
     let mut report = InstallReport::default();
     for name in deps.keys() {
-        let dest = container.join("packages").join(name);
+        // `name` dari `gnative.toml` (input pengguna) → sanitasi agar tidak
+        // keluar `container/packages` (P0-09: path traversal).
+        let dest = match safe_join(&container.join("packages"), name) {
+            Ok(d) => d,
+            Err(e) => {
+                report.missing.push(name.clone());
+                eprintln!("dependensi `{name}` ditolak: {e}");
+                continue;
+            }
+        };
         if package_exists(&dest) {
             report.up_to_date.push(name.clone());
             continue;
         }
-        let src = Path::new(RUNTIME_DIR).join(name);
+        let src = match safe_join(Path::new(RUNTIME_DIR), name) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
         if src.is_dir() {
             copy_tree(&src, &dest)?;
             report.installed.push(name.clone());
@@ -136,6 +148,34 @@ name = "demo"
         let report = install(&dir).unwrap();
         assert_eq!(report.missing, vec!["@gnative/nonexistent"]);
         assert!(report.installed.is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dependency_traversal_ditolak() {
+        // P0-09: nama dependency `../../evil` tak boleh menulis di luar
+        // container/packages. Ditolak (masuk `missing`), tak ada file keluar.
+        let dir = std::env::temp_dir().join(format!("gnative-install-evil-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("gnative.toml"),
+            r#"[project]
+name = "demo"
+
+[dependencies]
+"../../evil" = "0.1.0"
+"#,
+        )
+        .unwrap();
+
+        let report = install(&dir).unwrap();
+        assert!(report.missing.contains(&"../../evil".to_string()));
+        assert!(report.installed.is_empty());
+        // Tak ada direktori `evil` di luar container.
+        assert!(!dir.join("evil").exists());
+        assert!(!dir.join("container/evil").exists());
 
         let _ = std::fs::remove_dir_all(&dir);
     }

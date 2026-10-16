@@ -479,6 +479,7 @@ crates/gnative-core/src/rect.rs   → Rect
 crates/gnative-core/src/size.rs   → Size
 crates/gnative-core/src/units.rs  → satuan ukuran
 crates/gnative-core/src/event.rs  → Event input
+crates/gnative-core/src/path.rs   → sanitasi path (anti path-traversal)
 crates/gnative-core/src/lib.rs    → re-export tipe dasar
 
 crates/gnative-lang/src/token.rs      → Token + TokenKind

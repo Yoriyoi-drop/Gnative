@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use gnative_core::{GnError, GnResult};
+use gnative_core::{safe_join, GnError, GnResult};
 
 /// Hasil resolusi: daftar package yang dibutuhkan.
 #[derive(Debug, Clone, Default)]
@@ -42,10 +42,7 @@ fn resolve_package(import: &str, container: &Path, src_dir: &Path) -> GnResult<P
         let (scope, name) = rest
             .split_once('/')
             .ok_or_else(|| GnError::Config(format!("package `{import}` harus `@scope/name`")))?;
-        let candidate = container
-            .join("packages")
-            .join(format!("@{scope}"))
-            .join(name);
+        let candidate = safe_join(&container.join("packages"), &format!("@{scope}/{name}"))?;
         let main = candidate.join("src");
         if main.is_dir() {
             return Ok(main);
@@ -59,7 +56,7 @@ fn resolve_package(import: &str, container: &Path, src_dir: &Path) -> GnResult<P
         )));
     }
     // Import lokal tanpa scope → relatif ke src/.
-    let local = src_dir.join(import);
+    let local = safe_join(src_dir, import)?;
     if local.is_file() || local.is_dir() {
         return Ok(local);
     }
@@ -101,5 +98,19 @@ mod tests {
         assert!(resolution.packages.contains_key("@gnative/ui"));
         assert!(resolution.missing.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn traversal_ditolak_jadi_missing() {
+        // P0-09: `use` dengan `..` tak boleh keluar container/src → dilaporkan
+        // missing, bukan resolve ke path di luar root.
+        let resolution = Resolver::resolve(
+            &["@scope/../../etc".to_string(), "../rahasia".to_string()],
+            Path::new("container"),
+            Path::new("src"),
+        )
+        .unwrap();
+        assert!(resolution.packages.is_empty());
+        assert_eq!(resolution.missing.len(), 2);
     }
 }
