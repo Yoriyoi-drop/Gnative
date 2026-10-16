@@ -456,3 +456,20 @@ changelog + checklist G. Tanpa itu, rilis apa pun harus bukan v1.0.0.
   const infra). `cargo test -p gnative-lang` 27 lolos; `cargo test -p gnative-compiler`
   51 lolos (tanpa regresi). `cargo fmt --check` + `cargo clippy -D warnings` hijau.
 - Status P0-02: CLOSED (sisa: const belum ter-parse di parser → P1-08).
+
+### Iterasi 4 — P0-04 coercion tipe diam ke F64 (16 Okt 2026)
+- File: `crates/gnative-compiler/src/lower.rs` (ganti `gn_ty_to_ir` yang
+  `unwrap_or(IrTy::F64)` dengan `lower_ty(ty: &Type) -> Result<Option<IrTy>, String>`;
+  tipe didukung number/boolean/string/void → `Ok`, tipe lain `Element`/`string[]`/
+  union/generic/fn/unknown → `Err` eksplisit "tidak didukung oleh codegen native".
+  Terapkan di 8 titik: param fungsi + method, return fungsi + method, field state,
+  dan `let` (dengan/tanpa state). `void` sebagai param/field → error "tidak valid
+  untuk parameter/field state"; return tanpa anotasi atau `void` → `None` (void).
+  Diagnostic dari `lower` sudah diubah jadi `has_errors` di `pipeline.rs:196-203`,
+  sehingga tipe tak didukung gagal build, bukan miscompile diam).
+- Test: 5 regresi baru (`tipe_param_array_ditolak`, `tipe_param_union_ditolak`,
+  `tipe_return_element_ditolak`, `tipe_let_element_ditolak`,
+  `tipe_didukung_tetap_berhasil`). `cargo test -p gnative-compiler` 56 lolos
+  (tanpa regresi). `cargo fmt --check` + `cargo clippy -D warnings` hijau.
+- Status P0-04: CLOSED (tidak ada coerce diam di jalur sukses; tipe tak didukung
+  selalu error; perluasan daftar tipe didukung → P1-05/roadmap bahasa).

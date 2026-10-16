@@ -36,13 +36,22 @@ struct StatefulComponentTemplate {
     other_methods: Vec<MethodDecl>,
 }
 
-/// Konversi tipe `.gn` → `IrTy` (primitif didukung codegen; lain → F64).
-fn gn_ty_to_ir(ty: &Type) -> IrTy {
+/// Konversi tipe `.gn` → `IrTy` untuk codegen native.
+///
+/// Didukung: `number`/`boolean`/`string` (termasuk literalnya). `void` dan
+/// ketiadaan anotasi mengembalikan `None` (tak ada nilai / void).
+/// Tipe lain (`Element`, `string[]`, union, generic, fn, unknown, ...)
+/// dikembalikan sebagai `Err` — dilarang di-coerce diam ke `F64` (lihat P0-04).
+fn lower_ty(ty: &Type) -> Result<Option<IrTy>, String> {
     match ty {
-        Type::Number | Type::NumberLit(_) => IrTy::F64,
-        Type::Boolean => IrTy::Bool,
-        Type::String | Type::StringLit(_) => IrTy::Str,
-        _ => IrTy::from_name(&ty.to_string()).unwrap_or(IrTy::F64),
+        Type::Number | Type::NumberLit(_) => Ok(Some(IrTy::F64)),
+        Type::Boolean => Ok(Some(IrTy::Bool)),
+        Type::String | Type::StringLit(_) => Ok(Some(IrTy::Str)),
+        Type::Void => Ok(None),
+        _ => Err(format!(
+            "tipe `{}` tidak didukung oleh codegen native (hanya number, boolean, string, void)",
+            ty
+        )),
     }
 }
 
@@ -200,7 +209,9 @@ fn lower_function(f: &gnative_lang::ast::FunctionDecl) -> Result<IrFunc, String>
     let mut params = Vec::new();
     for p in &f.params {
         let ty = match &p.ty {
-            Some(t) => IrTy::from_name(&t.to_string()).unwrap_or(IrTy::F64),
+            Some(t) => {
+                lower_ty(t)?.ok_or_else(|| "tipe `void` tidak valid untuk parameter".to_string())?
+            }
             None => IrTy::F64, // tanpa anotasi → number (JS-like)
         };
         params.push(IrParam {
@@ -208,7 +219,10 @@ fn lower_function(f: &gnative_lang::ast::FunctionDecl) -> Result<IrFunc, String>
             ty,
         });
     }
-    let ret = f.ret.as_ref().and_then(|t| IrTy::from_name(&t.to_string()));
+    let ret = match &f.ret {
+        Some(t) => lower_ty(t)?,
+        None => None,
+    };
     let body = lower_stmts(&f.body)?;
     Ok(IrFunc {
         name: f.name.clone(),
@@ -225,7 +239,8 @@ fn lower_stateful_def(tmpl: &StatefulComponentTemplate) -> Result<(String, State
     // Lower state fields (`ty: Type`, `init: Option<Expr>`)
     let mut state_fields = Vec::new();
     for sf in &tmpl.state_fields {
-        let ty = gn_ty_to_ir(&sf.ty);
+        let ty = lower_ty(&sf.ty)?
+            .ok_or_else(|| format!("field state `{}` tidak boleh bertipe void", sf.name))?;
         let init = match &sf.init {
             Some(e) => lower_expr(e)?,
             None => match ty {
@@ -367,7 +382,9 @@ fn lower_component_method(
     let mut params = Vec::new();
     for p in &f.params {
         let ty = match &p.ty {
-            Some(t) => gn_ty_to_ir(t),
+            Some(t) => {
+                lower_ty(t)?.ok_or_else(|| "tipe `void` tidak valid untuk parameter".to_string())?
+            }
             None => IrTy::F64,
         };
         params.push(IrParam {
@@ -375,7 +392,10 @@ fn lower_component_method(
             ty,
         });
     }
-    let ret = f.ret.as_ref().and_then(|t| IrTy::from_name(&t.to_string()));
+    let ret = match &f.ret {
+        Some(t) => lower_ty(t)?,
+        None => None,
+    };
     let mut locals: std::collections::HashSet<String> =
         f.params.iter().map(|p| p.name.clone()).collect();
     let body = lower_stmts_with_state(&f.body, state_fields, &mut locals)?;
@@ -430,7 +450,7 @@ fn lower_stmt_with_state(
                 None => None,
             };
             let ty = match ty {
-                Some(t) => IrTy::from_name(&t.to_string()),
+                Some(t) => lower_ty(t)?,
                 None => None,
             };
             locals.insert(name.clone());
@@ -684,7 +704,7 @@ fn lower_stmt(s: &Stmt) -> Result<IrStmt, String> {
                 None => None,
             };
             let ty = match ty {
-                Some(t) => IrTy::from_name(&t.to_string()),
+                Some(t) => lower_ty(t)?,
                 None => None,
             };
             Ok(IrStmt::Let {
@@ -1772,5 +1792,86 @@ mod tests {
         let (module, _) = parse_source(src);
         let out = lower(&module).unwrap();
         assert!(out.diagnostics.iter().any(|d| d.contains("onClick")));
+    }
+
+    // --- P0-04: coercion tipe tak didukung tidak boleh diam ke F64 ---
+
+    #[test]
+    fn tipe_param_array_ditolak() {
+        let src = r#"
+            function f(x: string[]): number { return 0; }
+            window App { title: "x"; root: <text content="y"/>; }
+        "#;
+        let (module, _) = parse_source(src);
+        let out = lower(&module).unwrap();
+        assert!(
+            out.diagnostics.iter().any(|d| d.contains("tidak didukung")),
+            "harus menolak tipe array sebagai param, diagnostics: {:?}",
+            out.diagnostics
+        );
+    }
+
+    #[test]
+    fn tipe_param_union_ditolak() {
+        let src = r#"
+            function f(x: "a" | "b"): number { return 0; }
+            window App { title: "x"; root: <text content="y"/>; }
+        "#;
+        let (module, _) = parse_source(src);
+        let out = lower(&module).unwrap();
+        assert!(
+            out.diagnostics.iter().any(|d| d.contains("tidak didukung")),
+            "harus menolak tipe union sebagai param, diagnostics: {:?}",
+            out.diagnostics
+        );
+    }
+
+    #[test]
+    fn tipe_return_element_ditolak() {
+        let src = r#"
+            function g(): Element { return <text content="x"/>; }
+            window App { title: "x"; root: <text content="y"/>; }
+        "#;
+        let (module, _) = parse_source(src);
+        let out = lower(&module).unwrap();
+        assert!(
+            out.diagnostics.iter().any(|d| d.contains("tidak didukung")),
+            "harus menolak tipe Element sebagai return, diagnostics: {:?}",
+            out.diagnostics
+        );
+    }
+
+    #[test]
+    fn tipe_let_element_ditolak() {
+        let src = r#"
+            function h(): number { let y: Element; return 0; }
+            window App { title: "x"; root: <text content="y"/>; }
+        "#;
+        let (module, _) = parse_source(src);
+        let out = lower(&module).unwrap();
+        assert!(
+            out.diagnostics.iter().any(|d| d.contains("tidak didukung")),
+            "harus menolak tipe Element sebagai let, diagnostics: {:?}",
+            out.diagnostics
+        );
+    }
+
+    #[test]
+    fn tipe_didukung_tetap_berhasil() {
+        let src = r#"
+            function add(a: number, b: number): number { return a + b; }
+            function flag(): boolean { return true; }
+            function nama(): string { return "ok"; }
+            function kosong(): void { }
+            window App { title: "x"; root: <text content="y"/>; }
+        "#;
+        let (module, _) = parse_source(src);
+        let out = lower(&module).unwrap();
+        assert!(
+            out.diagnostics.is_empty(),
+            "tipe didukung tidak boleh menghasilkan diagnostic, diagnostics: {:?}",
+            out.diagnostics
+        );
+        assert_eq!(out.module.funcs.len(), 4);
     }
 }
