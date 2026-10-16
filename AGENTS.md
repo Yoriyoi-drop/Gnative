@@ -11,7 +11,8 @@ Baca penuh sebelum mengubah apa pun. Detail arsitektur ada di [DESIGN.md](./DESI
   **binary native** (bukan bahasa pemrograman native — DSL UI yang dikompilasi).
 - Pipeline: `.gn` → AST → **Semantic IR** → **MIR** → **Cranelift** (dev) / **LLVM** (release)
   → object file → **linker** → binary native. **Tanpa generate kode Rust.**
-- Engine: **Rust murni**; rendering **wgpu (primary)** + **CUDA (fallback)** —
+- Engine: **Rust murni**; rendering **wgpu (primary)** + **CUDA (kerangka, belum
+  bekerja — `CudaRenderer::new()` selalu `BackendUnavailable`)** —
   di-link ke binary sebagai libruntime (`libgnative_runtime.a`).
 - Status: **milestone 0.7 — kompiler native**.
 

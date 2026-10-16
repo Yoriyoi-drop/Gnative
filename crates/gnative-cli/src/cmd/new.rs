@@ -5,9 +5,11 @@ use std::path::Path;
 use gnative_compiler::config::Config;
 use gnative_core::safe_join;
 
+use crate::log;
+
 pub fn run(args: &[String]) -> i32 {
     let Some(name) = args.first() else {
-        eprintln!("pemakaian: gnative new <nama-project>");
+        log::error("pemakaian: gnative new <nama-project>");
         return 1;
     };
 
@@ -16,23 +18,27 @@ pub fn run(args: &[String]) -> i32 {
     let dir = match safe_join(Path::new("."), name) {
         Ok(d) => d,
         Err(e) => {
-            eprintln!("nama project tidak valid: {e}");
+            log::error(format!("nama project tidak valid: {e}"));
             return 1;
         }
     };
     if dir.exists() {
-        eprintln!("direktori `{name}` sudah ada");
+        log::error(format!("direktori `{name}` sudah ada"));
         return 1;
     }
 
-    if std::fs::create_dir_all(dir.join("src")).is_err() {
-        eprintln!("gagal membuat direktori");
+    // P3-04: propagasi error tulis/buat direktori (jangan telan kegagalan).
+    if let Err(e) = std::fs::create_dir_all(dir.join("src")) {
+        log::error(format!("gagal membuat direktori {}: {e}", dir.display()));
         return 1;
     }
 
     // gnative.toml
     let config = Config::template(name);
-    let _ = std::fs::write(dir.join("gnative.toml"), config);
+    if let Err(e) = std::fs::write(dir.join("gnative.toml"), config) {
+        log::error(format!("gagal menulis gnative.toml: {e}"));
+        return 1;
+    }
 
     // src/main.gn contoh — fungsi/if/for dikompilasi native (milestone 0.8)
     let main_gn = r#"// src/main.gn — contoh project Gnative
@@ -69,9 +75,12 @@ window App {
   </vstack>;
 }
 "#;
-    let _ = std::fs::write(dir.join("src/main.gn"), main_gn);
+    if let Err(e) = std::fs::write(dir.join("src/main.gn"), main_gn) {
+        log::error(format!("gagal menulis src/main.gn: {e}"));
+        return 1;
+    }
 
-    println!("project `{name}` dibuat:");
+    log::info(format!("project `{name}` dibuat:"));
     println!("  {name}/gnative.toml");
     println!("  {name}/src/main.gn");
     println!("\njalankan: cd {name} && gnative build");

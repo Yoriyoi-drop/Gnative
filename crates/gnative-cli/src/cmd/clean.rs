@@ -25,12 +25,21 @@ pub fn run(args: &[String]) -> i32 {
     }
 
     if all {
-        // Hapus juga graph & metadata (paket dipertahankan).
+        // Hapus juga graph & metadata (paket dipertahankan). Error di-propagasi
+        // (P3-04: jangan telan kegagalan hapus).
         for sub in ["graph", "metadata"] {
             let dir = container.join(sub);
             if dir.exists() {
-                let _ = std::fs::remove_dir_all(&dir);
-                println!("menghapus {}", dir.display());
+                match std::fs::remove_dir_all(&dir) {
+                    Ok(()) => {
+                        println!("menghapus {}", dir.display());
+                        removed += 1;
+                    }
+                    Err(e) => {
+                        eprintln!("gagal menghapus {}: {e}", dir.display());
+                        return 1;
+                    }
+                }
             }
         }
     }

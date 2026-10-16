@@ -61,11 +61,20 @@ impl BuildMode {
         }
     }
 
-    /// Triple target dari `--target <triple>`; `None` = host.
-    pub fn target_from_args(args: &[String]) -> Option<String> {
-        args.iter()
-            .position(|a| a == "--target")
-            .map(|i| args.get(i + 1).cloned().unwrap_or_else(|| "".to_string()))
+    /// Triple target dari `--target <triple>`.
+    ///
+    /// `Ok(None)` = host (flag tak ada). `Err` = flag ada tapi nilainya kosong
+    /// atau hilang (P3-02: jangan diam-diam jatuh ke host).
+    pub fn target_from_args(args: &[String]) -> Result<Option<String>, String> {
+        match args.iter().position(|a| a == "--target") {
+            None => Ok(None),
+            Some(i) => match args.get(i + 1) {
+                Some(t) if !t.is_empty() && !t.starts_with('-') => Ok(Some(t.clone())),
+                _ => {
+                    Err("`--target` butuh nilai (mis. `--target aarch64-unknown-linux-gnu`)".into())
+                }
+            },
+        }
     }
 }
 
@@ -138,5 +147,21 @@ mod tests {
         assert!(used.contains("gn_window_create"));
         assert!(used.contains("gn_window_run"));
         assert!(!used.contains("gn_scene_create"));
+    }
+
+    #[test]
+    fn target_kosong_ditolak() {
+        // P3-02: `--target` tanpa nilai tidak boleh diam-diam jadi host.
+        assert!(BuildMode::target_from_args(&["--target".to_string()]).is_err());
+        assert!(BuildMode::target_from_args(&["--target".to_string(), String::new()]).is_err());
+        assert_eq!(BuildMode::target_from_args(&[]).unwrap(), None);
+        assert_eq!(
+            BuildMode::target_from_args(&[
+                "--target".to_string(),
+                "aarch64-unknown-linux-gnu".to_string()
+            ])
+            .unwrap(),
+            Some("aarch64-unknown-linux-gnu".to_string())
+        );
     }
 }

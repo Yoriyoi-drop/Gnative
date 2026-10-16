@@ -366,14 +366,15 @@ pub trait RenderBackend {
 1. WgpuRenderer::new(window)   ── PRIMARY  (Vulkan / Metal / DX12 / GLES)
         │ gagal (no adapter, no surface)
         ▼
-2. CudaRenderer::new()         ── FALLBACK (rasterizer komputasi GPU NVIDIA)
-        │ gagal (tidak ada driver CUDA / feature nonaktif)
+2. CudaRenderer::new()         ── kerangka (SELALU gagal; belum diimplementasikan)
+        │ gagal (feature nonaktif ATAU kernel belum ada — roadmap 0.8)
         ▼
 3. Err(BackendUnavailable)     → pesan yang jelas kepada user
 ```
 
 - wgpu dipilih lebih dulu: akselerasi penuh + komposisi window native.
-- CUDA = fallback komputasi jika GPU NVIDIA tanpa stack Vulkan yang layak.
+- CUDA saat ini **bukan fallback yang bekerja** — `new()` selalu
+  `BackendUnavailable` (lihat §7.5). Fallback nyata = roadmap 0.8/1.0.
 
 ### 7.3 Scene Graph
 
@@ -405,12 +406,17 @@ pub enum Node {
 - Frame: `get_current_texture` → `create_view` → `begin_render_pass` →
   `submit` → `present`.
 
-### 7.5 Backend CUDA (FALLBACK) — `crates/gnative-gfx-cuda`
+### 7.5 Backend CUDA (kerangka) — `crates/gnative-gfx-cuda`
+
+> **Status: belum didukung.** Backend CUDA masih **kerangka** (roadmap 0.8/1.0);
+> `CudaRenderer::new()` **selalu** mengembalikan `BackendUnavailable`, baik fitur
+> `cuda` aktif maupun tidak, dan `render_scene` selalu `Err`. Jadi jalur render
+> fungsional saat ini **hanya wgpu**; CUDA bukan fallback yang bekerja.
 
 - Di-gate fitur `cuda`. Libruntime CUDA: `cargo build -p gnative-runtime --features cuda`.
-- Konsep: scene → daftar primitive → kernel CUDA rasterisasi (scanline) →
+- Konsep (roadmap): scene → daftar primitive → kernel CUDA rasterisasi (scanline) →
   framebuffer → blit ke jendela.
-- Jika fitur mati, `CudaRenderer::new()` mengembalikan `BackendUnavailable`.
+- Fitur mati → `CudaRenderer::new()` mengembalikan `BackendUnavailable`.
 
 ---
 
@@ -531,6 +537,7 @@ crates/gnative-runtime/src/state_store.rs   → C-ABI gn_state_set/get_* (state 
 
 crates/gnative-cli/src/lib.rs        → run() CLI (+ flag global `--verbose`)
 crates/gnative-cli/src/log.rs        → log CLI berlevel (info/debug/warn/error)
+crates/gnative-cli/src/process.rs    → jalankan binary hasil build (verifikasi path + laporan sinyal)
 crates/gnative-cli/src/cmd/mod.rs    → dispatch + help
 crates/gnative-cli/src/cmd/*.rs      → satu perintah per file
   (new, build, run, check, clean, graph, doctor, container,

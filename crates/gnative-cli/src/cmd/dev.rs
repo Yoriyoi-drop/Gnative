@@ -11,23 +11,33 @@ use std::time::{Duration, SystemTime};
 
 use gnative_compiler::BuildMode;
 
+use crate::log;
+
 /// Interval polling perubahan file.
 const POLL_MS: u64 = 300;
+/// Jeda debounce: tunggu perubahan "mengendap" sebelum rebuild (P3-05).
+const DEBOUNCE_MS: u64 = 200;
 
 pub fn run(args: &[String]) -> i32 {
     let mode = BuildMode::from_args(args);
-    let target = BuildMode::target_from_args(args).filter(|t| !t.is_empty());
-    println!("[dev] memantau perubahan .gn (Ctrl+C untuk berhenti)");
+    let target = match BuildMode::target_from_args(args) {
+        Ok(t) => t,
+        Err(e) => {
+            log::error(e);
+            return 1;
+        }
+    };
+    log::info("dev: memantau perubahan .gn (Ctrl+C untuk berhenti)");
 
     let mut running: Option<Child> = None;
     // Build pertama.
     match rebuild(&mode, target.as_deref()) {
         Ok(Some(binary)) => running = spawn(&binary),
         Ok(None) => {
-            eprintln!("[dev] build pertama gagal — menunggu perubahan untuk mencoba lagi");
+            log::warn("dev: build pertama gagal — menunggu perubahan untuk mencoba lagi");
         }
         Err(e) => {
-            eprintln!("[dev] build pertama gagal: {e}");
+            log::error(format!("dev: build pertama gagal: {e}"));
         }
     }
 
@@ -38,11 +48,22 @@ pub fn run(args: &[String]) -> i32 {
         if state == last_state {
             continue;
         }
-        last_state = state;
-        println!("\n[dev] perubahan terdeteksi — rebuild + restart");
+        // Debounce: tunggu hingga tak ada perubahan lagi (editor sering
+        // menulis beberapa kali per simpan — P3-05).
+        let mut settled = state;
+        loop {
+            sleep(Duration::from_millis(DEBOUNCE_MS));
+            let s = snapshot();
+            if s == settled {
+                break;
+            }
+            settled = s;
+        }
+        last_state = settled;
+        log::info("dev: perubahan terdeteksi — rebuild + restart");
 
         // Hentikan binary lama sebelum build ulang (window harus ditutup
-        // dulu agar port/file window tidak terkunci).
+        // dulu agar berkas window tak terkunci).
         if let Some(child) = running.take() {
             let _ = kill(child);
         }
@@ -50,10 +71,10 @@ pub fn run(args: &[String]) -> i32 {
         match rebuild(&mode, target.as_deref()) {
             Ok(Some(binary)) => running = spawn(&binary),
             Ok(None) => {
-                eprintln!("[dev] build gagal — menunggu perubahan berikutnya");
+                log::warn("dev: build gagal — menunggu perubahan berikutnya");
             }
             Err(e) => {
-                eprintln!("[dev] build gagal: {e}");
+                log::error(format!("dev: build gagal: {e}"));
             }
         }
     }
@@ -102,7 +123,7 @@ fn rebuild(mode: &BuildMode, target: Option<&str>) -> Result<Option<PathBuf>, St
     match gnative_compiler::build_with_target(Path::new("."), *mode, target) {
         Ok(report) => {
             for d in &report.diagnostics {
-                eprintln!("  {d}");
+                log::warn(d);
             }
             if report.has_errors {
                 return Ok(None);
@@ -113,28 +134,31 @@ fn rebuild(mode: &BuildMode, target: Option<&str>) -> Result<Option<PathBuf>, St
     }
 }
 
-/// Jalankan binary; `None` bila gagal spawn.
+/// Jalankan binary (verifikasi path — P3-06); `None` bila gagal spawn.
 fn spawn(binary: &Path) -> Option<Child> {
-    println!("[dev] menjalankan {} ...", binary.display());
+    if !binary.is_file() {
+        log::error(format!("dev: binary tidak ditemukan: {}", binary.display()));
+        return None;
+    }
+    log::info(format!("dev: menjalankan {} ...", binary.display()));
     match Command::new(binary).spawn() {
         Ok(child) => Some(child),
         Err(e) => {
-            eprintln!("[dev] gagal menjalankan binary: {e}");
+            log::error(format!("dev: gagal menjalankan binary: {e}"));
             None
         }
     }
 }
 
-/// Hentikan child dengan grace (SIGKILL via drop) — `child.kill()` cukup di
-/// Unix; di Windows `taskkill` lebih andal untuk menutup window tree.
+/// Hentikan child: `kill()` mengirim SIGKILL di Unix; di Windows `taskkill /T`
+/// juga mematikan proses anak (tree) sebelum `kill()` sebagai jaring pengaman.
 fn kill(mut child: Child) -> std::io::Result<()> {
     #[cfg(windows)]
     {
-        if let Some(pid) = child.id().into() {
-            let _ = Command::new("taskkill")
-                .args(["/PID", &pid.to_string(), "/T", "/F"])
-                .status();
-        }
+        let pid = child.id().to_string();
+        let _ = Command::new("taskkill")
+            .args(["/PID", &pid, "/T", "/F"])
+            .status();
     }
     let _ = child.kill();
     let _ = child.wait();

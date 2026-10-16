@@ -76,30 +76,53 @@ fn verify() -> i32 {
     let root = container_dir();
     let mut issues = 0;
 
-    // Pastikan direktori penting konsisten dengan metadata (jika ada).
+    // 1. Runtime .gn harus ter-seed (inti container: `@gnative/ui`).
+    let runtime = root.join("packages/@gnative/ui");
+    let has_gn = std::fs::read_dir(&runtime)
+        .map(|it| {
+            it.flatten()
+                .any(|e| e.path().extension().is_some_and(|x| x == "gn"))
+        })
+        .unwrap_or(false);
+    if has_gn {
+        println!("packages/@gnative/ui: ada (runtime .gn)");
+    } else {
+        println!(
+            "packages/@gnative/ui: belum ada / kosong — jalankan `gnative build` untuk seed runtime"
+        );
+        issues += 1;
+    }
+
+    // 2. metadata/container.json (opsional): bila ada harus objek JSON ber-`name`.
     let metadata_file = root.join("metadata/container.json");
-    if metadata_file.exists() {
-        if let Ok(text) = std::fs::read_to_string(&metadata_file) {
-            if !text.contains("gnative") {
-                println!("metadata/container.json tampak tidak valid");
+    match std::fs::read_to_string(&metadata_file) {
+        Ok(text) => {
+            let t = text.trim();
+            if t.starts_with('{') && t.ends_with('}') && text.contains("\"name\"") {
+                println!("metadata/container.json: valid");
+            } else {
+                println!("metadata/container.json: tidak valid (butuh objek JSON ber-`name`)");
                 issues += 1;
             }
         }
-    } else {
-        println!("metadata/container.json belum ada (normal untuk project baru)");
+        Err(_) => println!("metadata/container.json: belum ada (opsional)"),
     }
 
-    // Package runtime harus tersedia (di-seed compiler saat build).
-    let runtime = root.join("packages/@gnative/ui");
-    if runtime.exists() {
-        println!("packages/@gnative/ui: ada (runtime .gn)");
-    } else {
-        println!("packages/@gnative/ui: belum ada — jalankan `gnative build` untuk seed runtime");
-    }
-
+    // 3. artifacts/: konsistensi object vs binary hasil build.
     let artifacts = root.join("artifacts");
-    if artifacts.exists() {
-        println!("artifacts/: ada (object + binary native)");
+    let (mut objects, mut binaries) = (0usize, 0usize);
+    if let Ok(entries) = std::fs::read_dir(&artifacts) {
+        for e in entries.flatten() {
+            match e.path().extension().and_then(|x| x.to_str()) {
+                Some("o") => objects += 1,
+                Some("gn") => {}
+                Some(_) if e.path().is_file() => binaries += 1,
+                _ => {}
+            }
+        }
+    }
+    if objects > 0 || binaries > 0 {
+        println!("artifacts/: {objects} object, {binaries} binary");
     } else {
         println!("artifacts/: belum ada — jalankan `gnative build`");
     }

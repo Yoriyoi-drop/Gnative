@@ -4,6 +4,7 @@
 
 pub mod cmd;
 pub mod log;
+pub mod process;
 
 /// Jalankan CLI; kembalikan exit code.
 ///

@@ -739,4 +739,26 @@ changelog + checklist G. Tanpa itu, rilis apa pun harus bukan v1.0.0.
   --workspace` hijau; fmt/clippy bersih.
 - Status P2-07..13: CLOSED.
 
+### Iterasi 17 — P3-01..07 minor/ergonomi (16 Okt 2026)
+
+- P3-01: doc `ui_builder.rs` tak lagi merujuk `scene_bridge.rs` yang hilang
+  (sudah beres di Iterasi 11).
+- P3-02: `BuildMode::target_from_args` → `Result`; `--target` tanpa nilai/kosong
+  **ditolak** (exit 1), tidak diam-diam jatuh ke host. Dipakai `build`/`run`/`dev`.
+- P3-03: `container verify` memakai **kriteria nyata** — runtime `@gnative/ui`
+  harus berisi `.gn` (error bila kosong), metadata JSON divalidasi bentuknya,
+  artifacts dihitung (object/binary). Dokumen CUDA diselaraskan.
+- P3-04: `new`/`clean` **mempropagasi error** tulis/hapus (tak lagi `let _ = …`);
+  pesan error menyertakan path + penyebab.
+- P3-05: `dev` menambah **debounce** 200 ms (tunggu perubahan mengendap) dan
+  komentar `kill` diperbaiki (SIGKILL Unix; `taskkill /T` Windows).
+- P3-06: `process.rs` (baru) — verifikasi path binary sebelum spawn (anti
+  TOCTOU/ENOENT) + laporkan **penghentian sinyal** (`128 + signal`), dipakai
+  `run` (dan `dev` untuk verifikasi path).
+- P3-07: status CUDA dinyatakan jujur di `DESIGN.md` (§7.2/§7.5) dan `AGENTS.md`:
+  **kerangka, `new()` selalu `BackendUnavailable`** — bukan fallback yang bekerja.
+- Test: `target_kosong_ditolak` (codegen). `cargo test --workspace` hijau;
+  fmt/clippy bersih.
+- Status P3-01..07: CLOSED.
+
 

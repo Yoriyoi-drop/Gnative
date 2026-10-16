@@ -9,7 +9,13 @@ use crate::log;
 
 pub fn run(args: &[String]) -> i32 {
     let mode = BuildMode::from_args(args);
-    let target = BuildMode::target_from_args(args).filter(|t| !t.is_empty());
+    let target = match BuildMode::target_from_args(args) {
+        Ok(t) => t,
+        Err(e) => {
+            log::error(e);
+            return 1;
+        }
+    };
     let project = Path::new(".");
     log::debug(format!(
         "build: mode={:?}, target={}",
