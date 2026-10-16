@@ -488,3 +488,28 @@ changelog + checklist G. Tanpa itu, rilis apa pun harus bukan v1.0.0.
 - Status P0-05: CLOSED (matriks op×tipe identik kedua backend; tanpa `unreachable`
   pada input pengguna; sisa: `slot_vars[&slot]`/`func_ids[callee]` indeks langsung
   masih Index-panic bila MIR cacat — dicatat backlog P2/validasi MIR).
+
+### Iterasi 6 — P1-01..04 lexer/parser hardening (16 Okt 2026)
+- File: `crates/gnative-lang/src/lexer.rs` + `parser.rs` + `lib.rs`.
+  - **P1-01**: `Lexer` kini lacak `byte_pos` (offset byte asli, bukan indeks char);
+    `span()` pakai `start_byte..byte_pos` dengan lebar > 0 (sebelumnya `self.pos..self.pos`
+    → semua token lebar 0). Kolom menunjuk posisi akhir; unicode (😀=4 byte) menggeser
+    byte dengan benar.
+  - **P1-03**: `lex_number` tidak lagi `unwrap_or(0.0)`; angka gagal parse
+    (`1.2.3`, `1.2.3.4`) → `Diagnostic::error` "angka tidak valid" (token fallback
+    0.0 agar parser tak panic).
+  - **P1-04**: `lex_string` tangani escape (`\n \t \r \" \' \\ \` \0`) dan deteksi
+    string tak terterminasi (EOF sebelum quote tutup) → error.
+  - **P1-02**: tambah `Parser::expect(kind, what)` (error eksplisit bila delimiter
+    wajib hilang); ubah semua `eat` delimiter struktural (`; { } ( ) [ ] > </ => of`,
+    `:` tipe, `=` bind) jadi `expect`. Sisa `eat` hanya yang opsional
+    (`is_some()`/`while`/`Comma`/`Dot`/`Question`/`Pipe`). `tokenize` kini
+    kembalikan `(Vec<Token>, Vec<Diagnostic>)`; `parse_source` gabungkan ke diagnostic.
+- Test: 8 regresi baru (`span_byte_dan_lebar_nonzero`, `span_byte_unicode_tergeser`,
+  `angka_invalid_melaporkan_error`, `angka_invalid_multi_titik_error`,
+  `string_escape_ditangani`, `string_tak_terterminasi_error`, `expect_hilang_delimiter_error`,
+  +前期 `string_content_kept_intact` tetap). `cargo test -p gnative-lang` 34 lolos;
+  `cargo test -p gnative-compiler` 58 lolos (tanpa regresi). `cargo fmt --check` +
+  `cargo clippy -D warnings` hijau.
+- Status P1-01/02/03/04: CLOSED (lexer/parser tidak lagi diam pada input cacat;
+  span presisi byte; angka/string cacat → error).

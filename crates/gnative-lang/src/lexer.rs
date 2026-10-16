@@ -1,5 +1,6 @@
 //! Lexer: teks `.gn` → `Vec<Token>`.
 
+use crate::diagnostic::Diagnostic;
 use crate::span::{LineColumn, Span};
 use crate::token::{Token, TokenKind};
 
@@ -7,6 +8,8 @@ use crate::token::{Token, TokenKind};
 pub struct Lexer<'a> {
     chars: Vec<char>,
     pos: usize,
+    /// Offset byte saat ini dalam source asli (bukan indeks char).
+    byte_pos: usize,
     line: usize,
     column: usize,
     _marker: std::marker::PhantomData<&'a str>,
@@ -17,6 +20,7 @@ impl<'a> Lexer<'a> {
         Self {
             chars: src.chars().collect(),
             pos: 0,
+            byte_pos: 0,
             line: 1,
             column: 1,
             _marker: std::marker::PhantomData,
@@ -24,15 +28,19 @@ impl<'a> Lexer<'a> {
     }
 
     /// Ubah seluruh source menjadi token (berakhir dengan `Eof`).
-    pub fn tokenize(mut self) -> Vec<Token> {
+    /// Mengembalikan token + diagnostic leksikal (angka tak valid, string
+    /// tak terterminasi, dll).
+    pub fn tokenize(mut self) -> (Vec<Token>, Vec<Diagnostic>) {
         let mut tokens = Vec::new();
+        let mut diagnostics: Vec<Diagnostic> = Vec::new();
         loop {
             self.skip_whitespace_and_comments();
             let start_loc = self.loc();
+            let start_byte = self.byte_pos;
             let c = match self.peek() {
                 Some(c) => c,
                 None => {
-                    tokens.push(Token::new(TokenKind::Eof, self.span(start_loc)));
+                    tokens.push(Token::new(TokenKind::Eof, self.span(start_loc, start_byte)));
                     break;
                 }
             };
@@ -40,14 +48,14 @@ impl<'a> Lexer<'a> {
             let kind = if c.is_ascii_alphabetic() || c == '_' {
                 self.lex_ident_or_keyword()
             } else if c.is_ascii_digit() {
-                self.lex_number()
+                self.lex_number(&mut diagnostics)
             } else {
-                self.lex_symbol()
+                self.lex_symbol(&mut diagnostics)
             };
 
-            tokens.push(Token::new(kind, self.span(start_loc)));
+            tokens.push(Token::new(kind, self.span(start_loc, start_byte)));
         }
-        tokens
+        (tokens, diagnostics)
     }
 
     fn lex_ident_or_keyword(&mut self) -> TokenKind {
@@ -91,8 +99,10 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn lex_number(&mut self) -> TokenKind {
+    fn lex_number(&mut self, diags: &mut Vec<Diagnostic>) -> TokenKind {
         let start = self.pos;
+        let start_byte = self.byte_pos;
+        let start_loc = self.loc();
         while let Some(c) = self.peek() {
             if c.is_ascii_digit() || c == '.' {
                 self.bump();
@@ -101,22 +111,62 @@ impl<'a> Lexer<'a> {
             }
         }
         let text: String = self.chars[start..self.pos].iter().collect();
-        let n = text.parse::<f64>().unwrap_or(0.0);
-        TokenKind::Number(n)
-    }
-
-    fn lex_string(&mut self, quote: char) -> TokenKind {
-        // Pembuka sudah dikonsumsi oleh lex_symbol.
-        let start = self.pos;
-        while let Some(c) = self.peek() {
-            self.bump();
-            if c == quote {
-                break;
+        match text.parse::<f64>() {
+            Ok(n) => TokenKind::Number(n),
+            Err(_) => {
+                diags.push(Diagnostic::error(
+                    Span::new(start_byte, self.byte_pos, start_loc, self.loc()),
+                    format!("angka tidak valid: `{text}`"),
+                ));
+                TokenKind::Number(0.0)
             }
         }
-        let text: String = self.chars[start..self.pos.saturating_sub(1)]
-            .iter()
-            .collect();
+    }
+
+    fn lex_string(&mut self, quote: char, diags: &mut Vec<Diagnostic>) -> TokenKind {
+        // Pembuka sudah dikonsumsi oleh lex_symbol.
+        let start_byte = self.byte_pos;
+        let start_loc = self.loc();
+        let mut text = String::new();
+        let mut terminated = false;
+        while let Some(c) = self.peek() {
+            self.bump();
+            if c == '\\' {
+                // Escape: ambil karakter berikutnya (atau akhiri bila di EOF).
+                match self.peek() {
+                    Some(esc) => {
+                        self.bump();
+                        match esc {
+                            'n' => text.push('\n'),
+                            't' => text.push('\t'),
+                            'r' => text.push('\r'),
+                            '"' => text.push('"'),
+                            '\'' => text.push('\''),
+                            '\\' => text.push('\\'),
+                            '`' => text.push('`'),
+                            '0' => text.push('\0'),
+                            other => {
+                                text.push('\\');
+                                text.push(other);
+                            }
+                        }
+                    }
+                    None => break, // backslash di akhir input → tak terterminasi
+                }
+                continue;
+            }
+            if c == quote {
+                terminated = true;
+                break;
+            }
+            text.push(c);
+        }
+        if !terminated {
+            diags.push(Diagnostic::error(
+                Span::new(start_byte, self.byte_pos, start_loc, self.loc()),
+                "string literal tak terterminasi (kurang tanda kutip penutup)".into(),
+            ));
+        }
         TokenKind::String(text)
     }
 
@@ -136,7 +186,7 @@ impl<'a> Lexer<'a> {
         TokenKind::Template(text)
     }
 
-    fn lex_symbol(&mut self) -> TokenKind {
+    fn lex_symbol(&mut self, diags: &mut Vec<Diagnostic>) -> TokenKind {
         let c = self.bump().unwrap();
         match c {
             '{' => TokenKind::LBrace,
@@ -239,7 +289,7 @@ impl<'a> Lexer<'a> {
                     TokenKind::Pipe
                 }
             }
-            '"' | '\'' => self.lex_string(c),
+            '"' | '\'' => self.lex_string(c, diags),
             '`' => self.lex_template(),
             other => TokenKind::Ident(other.to_string()),
         }
@@ -275,6 +325,7 @@ impl<'a> Lexer<'a> {
     fn bump(&mut self) -> Option<char> {
         let c = self.chars.get(self.pos).copied()?;
         self.pos += 1;
+        self.byte_pos += c.len_utf8();
         if c == '\n' {
             self.line += 1;
             self.column = 1;
@@ -291,10 +342,12 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn span(&self, start: LineColumn) -> Span {
+    fn span(&self, start: LineColumn, start_byte: usize) -> Span {
+        // Offset byte (bukan indeks char) dengan lebar > 0; kolom menunjuk
+        // posisi akhir token agar pesan error akurat (termasuk unicode).
         Span::new(
-            self.pos,
-            self.pos,
+            start_byte,
+            self.byte_pos,
             start,
             LineColumn {
                 line: self.line,
@@ -311,7 +364,7 @@ mod tests {
     #[test]
     fn lex_basic() {
         let src = "use \"@gnative/ui\";\ncomponent Button {}";
-        let tokens = Lexer::new(src).tokenize();
+        let (tokens, _lex_diags) = Lexer::new(src).tokenize();
         assert!(matches!(tokens[0].kind, TokenKind::Use));
         assert!(matches!(tokens[1].kind, TokenKind::String(_)));
         assert!(matches!(tokens[3].kind, TokenKind::Component));
@@ -321,7 +374,7 @@ mod tests {
     #[test]
     fn lex_arrow_and_element() {
         let src = "const f = (x: number) => x * 2; <Button label={\"ok\"} />";
-        let tokens = Lexer::new(src).tokenize();
+        let (tokens, _lex_diags) = Lexer::new(src).tokenize();
         let kinds: Vec<_> = tokens.iter().map(|t| t.kind.clone()).collect();
         assert!(kinds.contains(&TokenKind::Arrow));
         assert!(kinds.contains(&TokenKind::Lt));
@@ -331,7 +384,7 @@ mod tests {
     #[test]
     fn lex_comparison_operators() {
         let src = "if (a < b && c <= d && e >= f && g > h) {}";
-        let tokens = Lexer::new(src).tokenize();
+        let (tokens, _lex_diags) = Lexer::new(src).tokenize();
         let kinds: Vec<_> = tokens.iter().map(|t| t.kind.clone()).collect();
         assert!(kinds.contains(&TokenKind::Lt));
         assert!(kinds.contains(&TokenKind::LtEq));
@@ -344,10 +397,111 @@ mod tests {
     fn string_content_kept_intact() {
         // Regresi: huruf pertama string tidak boleh termakan double-bump.
         let src = "window App { title: \"Halo Gnative\"; }";
-        let tokens = Lexer::new(src).tokenize();
+        let (tokens, _lex_diags) = Lexer::new(src).tokenize();
         assert!(tokens.iter().any(|t| matches!(
             &t.kind,
             TokenKind::String(s) if s == "Halo Gnative"
         )));
+    }
+
+    // --- P1-01: span presisi byte + lebar > 0 (termasuk unicode) ---
+
+    #[test]
+    fn span_byte_dan_lebar_nonzero() {
+        let src = "abc 123";
+        let (tokens, _) = Lexer::new(src).tokenize();
+        // token pertama "abc": byte 0..3, lebar 3
+        let s = tokens[0].span;
+        assert_eq!(s.start, 0);
+        assert_eq!(s.end, 3);
+        assert!(s.end > s.start, "token harus punya lebar > 0");
+        // token kedua "123" setelah spasi: byte 4..7, lebar 3
+        let s2 = tokens[1].span;
+        assert_eq!(s2.start, 4);
+        assert_eq!(s2.end, 7);
+    }
+
+    #[test]
+    fn span_byte_unicode_tergeser() {
+        // Karakter unicode (😀 = 4 byte UTF-8) harus menggeser offset byte,
+        // bukan indeks char. 😀 bukan alphanumeric → masuk lex_symbol sebagai
+        // ident 1-karakter (4 byte), lalu `x` ident terpisah.
+        let src = "😀x";
+        let (tokens, _) = Lexer::new(src).tokenize();
+        // token pertama = Ident("😀") span byte 0..4
+        assert_eq!(tokens[0].span.start, 0);
+        assert_eq!(tokens[0].span.end, 4);
+        // token kedua `x` dimulai di byte 4
+        assert_eq!(tokens[1].span.start, 4);
+        assert_eq!(tokens[1].span.end, 5);
+    }
+
+    // --- P1-03: angka invalid harus error, bukan 0.0 diam ---
+
+    #[test]
+    fn angka_invalid_melaporkan_error() {
+        let (tokens, diags) = Lexer::new("let x = 1.2.3;").tokenize();
+        assert!(
+            !diags.is_empty(),
+            "angka 1.2.3 harus menghasilkan diagnostic"
+        );
+        assert!(diags
+            .iter()
+            .any(|d| d.message.contains("angka tidak valid")));
+        // token Number tetap ada (nilai fallback 0.0) agar parser tak panic
+        assert!(tokens
+            .iter()
+            .any(|t| matches!(t.kind, TokenKind::Number(_))));
+    }
+
+    #[test]
+    fn angka_invalid_multi_titik_error() {
+        // `1.2.3.4` gagal parse f64 → harus error (bukan 0.0 diam).
+        let (_tokens, diags) = Lexer::new("let x = 1.2.3.4;").tokenize();
+        assert!(diags
+            .iter()
+            .any(|d| d.message.contains("angka tidak valid")));
+    }
+
+    // --- P1-04: string escape + unterminated error ---
+
+    #[test]
+    fn string_escape_ditangani() {
+        let (tokens, _diags) = Lexer::new("\"a\\nb\\tc\"").tokenize();
+        let s = tokens
+            .iter()
+            .find_map(|t| match &t.kind {
+                TokenKind::String(s) => Some(s.clone()),
+                _ => None,
+            })
+            .expect("token string ada");
+        assert_eq!(s, "a\nb\tc");
+    }
+
+    #[test]
+    fn string_tak_terterminasi_error() {
+        let src = "let x = \"unterminated;";
+        let (tokens, diags) = Lexer::new(src).tokenize();
+        assert!(
+            diags.iter().any(|d| d.message.contains("tak terterminasi")),
+            "string tak terterminasi harus error"
+        );
+        assert!(tokens
+            .iter()
+            .any(|t| matches!(t.kind, TokenKind::String(_))));
+    }
+
+    // --- P1-02 (lexer-side): delimiter tak perlu di sini; diuji di parser ---
+
+    #[test]
+    fn expect_hilang_delimiter_error() {
+        // `window App` tanpa `{` → parser laporkan error, tidak diam.
+        let (module, diags) = crate::parse_source("window App title: \"x\";");
+        assert!(
+            diags.iter().any(|d| d.message.contains("diharapkan")),
+            "delimiter hilang harus error, diagnostics: {:?}",
+            diags
+        );
+        let _ = module;
     }
 }

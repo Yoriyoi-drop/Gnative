@@ -34,10 +34,11 @@ pub use ty::Type;
 ///
 /// Mengembalikan modul + daftar diagnostic (kosong jika bersih).
 pub fn parse_source(source: &str) -> (Module, Vec<Diagnostic>) {
-    let tokens = Lexer::new(source).tokenize();
+    let (tokens, lex_diags) = Lexer::new(source).tokenize();
     let mut parser = Parser::new(tokens);
     let module = parser.parse_module();
     let mut diagnostics = parser.diagnostics;
+    diagnostics.extend(lex_diags);
     let checker = checker::Checker::new();
     let mut checked = module;
     checker.check(&mut checked, &mut diagnostics);

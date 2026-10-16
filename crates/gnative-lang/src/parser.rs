@@ -50,7 +50,7 @@ impl Parser {
                         span: self.prev().span,
                     });
                 }
-                self.eat(&TokenKind::Semi);
+                self.expect(&TokenKind::Semi, ";");
             } else {
                 match self.parse_decl() {
                     Some(decl) => module.decls.push(decl),
@@ -92,18 +92,18 @@ impl Parser {
             // `(props: PropsType)`
             if let Some(TokenKind::Ident(_)) = self.peek_kind() {
                 self.bump(); // nama param
-                self.eat(&TokenKind::Colon);
+                self.expect(&TokenKind::Colon, ":");
                 if let Some(TokenKind::Ident(t)) = self.peek_kind().cloned() {
                     props_type = Some(t);
                     self.bump();
                 }
             }
-            self.eat(&TokenKind::RParen);
+            self.expect(&TokenKind::RParen, ")");
         }
-        self.eat(&TokenKind::LBrace);
+        self.expect(&TokenKind::LBrace, "{");
         let state = self.parse_state_block();
         let (body, methods) = self.parse_block_members();
-        self.eat(&TokenKind::RBrace);
+        self.expect(&TokenKind::RBrace, "}");
         Some(ComponentDecl {
             name,
             props_type,
@@ -121,12 +121,12 @@ impl Parser {
             return fields;
         }
         self.bump();
-        self.eat(&TokenKind::LBrace);
+        self.expect(&TokenKind::LBrace, "{");
         while !self.check(&TokenKind::RBrace) && !self.at_eof() {
             let start = self.current().span;
             if let Some(TokenKind::Ident(name)) = self.peek_kind().cloned() {
                 self.bump();
-                self.eat(&TokenKind::Colon);
+                self.expect(&TokenKind::Colon, ":");
                 let ty = self.parse_type();
                 let init = if self.eat(&TokenKind::Eq).is_some() {
                     Some(self.parse_expr())
@@ -143,22 +143,22 @@ impl Parser {
                 self.error_here("field state harus `nama: Tipe = nilai;`");
                 self.bump();
             }
-            self.eat(&TokenKind::Semi);
+            self.expect(&TokenKind::Semi, ";");
         }
-        self.eat(&TokenKind::RBrace);
+        self.expect(&TokenKind::RBrace, "}");
         fields
     }
 
     fn parse_window(&mut self) -> Option<WindowDecl> {
         let start = self.bump().span; // `window`
         let name = self.expect_ident("nama window")?;
-        self.eat(&TokenKind::LBrace);
+        self.expect(&TokenKind::LBrace, "{");
         let mut props = Vec::new();
         while !self.check(&TokenKind::RBrace) && !self.at_eof() {
             let prop_start = self.current().span;
             if let Some(TokenKind::Ident(key)) = self.peek_kind().cloned() {
                 self.bump();
-                self.eat(&TokenKind::Colon);
+                self.expect(&TokenKind::Colon, ":");
                 let value = self.parse_expr();
                 props.push(PropLiteral {
                     name: key,
@@ -169,9 +169,9 @@ impl Parser {
                 self.error_here("properti window harus `nama: nilai`");
                 self.bump();
             }
-            self.eat(&TokenKind::Semi);
+            self.expect(&TokenKind::Semi, ";");
         }
-        self.eat(&TokenKind::RBrace);
+        self.expect(&TokenKind::RBrace, "}");
         Some(WindowDecl {
             name,
             props,
@@ -192,11 +192,11 @@ impl Parser {
                 }
                 self.eat(&TokenKind::Comma);
             }
-            self.eat(&TokenKind::Gt);
+            self.expect(&TokenKind::Gt, ">");
         }
-        self.eat(&TokenKind::LBrace);
+        self.expect(&TokenKind::LBrace, "{");
         let fields = self.parse_fields();
-        self.eat(&TokenKind::RBrace);
+        self.expect(&TokenKind::RBrace, "}");
         Some(InterfaceDecl {
             name,
             generics,
@@ -212,7 +212,7 @@ impl Parser {
             if let Some(TokenKind::Ident(name)) = self.peek_kind().cloned() {
                 self.bump();
                 let optional = self.eat(&TokenKind::Question).is_some();
-                self.eat(&TokenKind::Colon);
+                self.expect(&TokenKind::Colon, ":");
                 let ty = self.parse_type();
                 fields.push(FieldDecl {
                     name,
@@ -224,7 +224,7 @@ impl Parser {
                 self.error_here("field harus `nama: Tipe`");
                 self.bump();
             }
-            self.eat(&TokenKind::Semi);
+            self.expect(&TokenKind::Semi, ";");
         }
         fields
     }
@@ -232,9 +232,9 @@ impl Parser {
     fn parse_type_alias(&mut self) -> Option<TypeAliasDecl> {
         let start = self.bump().span; // `type`
         let name = self.expect_ident("nama tipe")?;
-        self.eat(&TokenKind::Eq);
+        self.expect(&TokenKind::Eq, "=");
         let ty = self.parse_type();
-        self.eat(&TokenKind::Semi);
+        self.expect(&TokenKind::Semi, ";");
         Some(TypeAliasDecl {
             name,
             ty,
@@ -275,7 +275,7 @@ impl Parser {
                         args.push(self.parse_type());
                         self.eat(&TokenKind::Comma);
                     }
-                    self.eat(&TokenKind::Gt);
+                    self.expect(&TokenKind::Gt, ">");
                     Type::Generic { name, args }
                 }
                 _ => Type::Named(name),
@@ -301,13 +301,13 @@ impl Parser {
                         // (a: T, b: T)
                         if let Some(TokenKind::Ident(_)) = self.peek_kind() {
                             self.bump();
-                            self.eat(&TokenKind::Colon);
+                            self.expect(&TokenKind::Colon, ":");
                         }
                         params.push(self.parse_atomic_type());
                         self.eat(&TokenKind::Comma);
                     }
-                    self.eat(&TokenKind::RParen);
-                    self.eat(&TokenKind::Arrow);
+                    self.expect(&TokenKind::RParen, ")");
+                    self.expect(&TokenKind::Arrow, "=>");
                     let ret = self.parse_type();
                     Type::Fn {
                         params,
@@ -321,7 +321,7 @@ impl Parser {
                 Some(TokenKind::LBracket) => {
                     self.bump();
                     let inner = self.parse_type();
-                    self.eat(&TokenKind::RBracket);
+                    self.expect(&TokenKind::RBracket, "]");
                     Type::Array(Box::new(inner))
                 }
                 _ => {
@@ -333,7 +333,7 @@ impl Parser {
         // Postfix: T[] (diterapkan pada semua bentuk dasar).
         if self.check(&TokenKind::LBracket) {
             self.bump();
-            self.eat(&TokenKind::RBracket);
+            self.expect(&TokenKind::RBracket, "]");
             Type::Array(Box::new(base))
         } else {
             base
@@ -344,9 +344,9 @@ impl Parser {
         let start = self.bump().span; // `function`
         let name = self.expect_ident("nama fungsi")?;
         let (params, ret) = self.parse_params_and_ret();
-        self.eat(&TokenKind::LBrace);
+        self.expect(&TokenKind::LBrace, "{");
         let (body, _) = self.parse_block_members();
-        self.eat(&TokenKind::RBrace);
+        self.expect(&TokenKind::RBrace, "}");
         Some(FunctionDecl {
             name,
             params,
@@ -359,9 +359,9 @@ impl Parser {
     fn parse_const(&mut self) -> Option<ConstDecl> {
         let start = self.bump().span; // `const`
         let name = self.expect_ident("nama konstanta")?;
-        self.eat(&TokenKind::Eq);
+        self.expect(&TokenKind::Eq, "=");
         let value = self.parse_expr();
-        self.eat(&TokenKind::Semi);
+        self.expect(&TokenKind::Semi, ";");
         Some(ConstDecl {
             name,
             value,
@@ -370,7 +370,7 @@ impl Parser {
     }
 
     fn parse_params_and_ret(&mut self) -> (Vec<Param>, Option<Type>) {
-        self.eat(&TokenKind::LParen);
+        self.expect(&TokenKind::LParen, "(");
         let mut params = Vec::new();
         while !self.check(&TokenKind::RParen) && !self.at_eof() {
             let start = self.current().span;
@@ -397,7 +397,7 @@ impl Parser {
             });
             self.eat(&TokenKind::Comma);
         }
-        self.eat(&TokenKind::RParen);
+        self.expect(&TokenKind::RParen, ")");
         let ret = if self.eat(&TokenKind::Colon).is_some() {
             Some(self.parse_type())
         } else {
@@ -435,7 +435,7 @@ impl Parser {
                     if self.check(&TokenKind::LBrace) {
                         self.bump();
                         let (body, _) = self.parse_block_members();
-                        self.eat(&TokenKind::RBrace);
+                        self.expect(&TokenKind::RBrace, "}");
                         methods.push(MethodDecl {
                             name,
                             params,
@@ -468,7 +468,7 @@ impl Parser {
             } else {
                 self.parse_expr()
             };
-            self.eat(&TokenKind::Semi);
+            self.expect(&TokenKind::Semi, ";");
             return Some(Stmt::Return(expr, start.join(self.prev().span)));
         }
         if self.check(&TokenKind::Let) {
@@ -484,7 +484,7 @@ impl Parser {
             } else {
                 None
             };
-            self.eat(&TokenKind::Semi);
+            self.expect(&TokenKind::Semi, ";");
             return Some(Stmt::Let {
                 name,
                 ty,
@@ -494,21 +494,21 @@ impl Parser {
         }
         if self.check(&TokenKind::If) {
             let start = self.bump().span;
-            self.eat(&TokenKind::LParen);
+            self.expect(&TokenKind::LParen, "(");
             let cond = self.parse_expr();
-            self.eat(&TokenKind::RParen);
-            self.eat(&TokenKind::LBrace);
+            self.expect(&TokenKind::RParen, ")");
+            self.expect(&TokenKind::LBrace, "{");
             let then_branch = self.parse_stmts_until_rbrace();
-            self.eat(&TokenKind::RBrace);
+            self.expect(&TokenKind::RBrace, "}");
             let mut else_branch = Vec::new();
             if self.eat(&TokenKind::Else).is_some() {
                 if self.eat(&TokenKind::If).is_some() {
                     // else-if: parse sebagai If bersarang.
                     self.pos = self.pos.saturating_sub(1);
                 }
-                self.eat(&TokenKind::LBrace);
+                self.expect(&TokenKind::LBrace, "{");
                 else_branch = self.parse_stmts_until_rbrace();
-                self.eat(&TokenKind::RBrace);
+                self.expect(&TokenKind::RBrace, "}");
             }
             return Some(Stmt::If {
                 cond,
@@ -519,14 +519,14 @@ impl Parser {
         }
         if self.check(&TokenKind::For) {
             let start = self.bump().span;
-            self.eat(&TokenKind::LParen);
+            self.expect(&TokenKind::LParen, "(");
             let var = self.expect_ident("variabel loop")?;
-            self.eat(&TokenKind::Of);
+            self.expect(&TokenKind::Of, "of");
             let iter = self.parse_expr();
-            self.eat(&TokenKind::RParen);
-            self.eat(&TokenKind::LBrace);
+            self.expect(&TokenKind::RParen, ")");
+            self.expect(&TokenKind::LBrace, "{");
             let body = self.parse_stmts_until_rbrace();
-            self.eat(&TokenKind::RBrace);
+            self.expect(&TokenKind::RBrace, "}");
             return Some(Stmt::For {
                 var,
                 iter,
@@ -535,7 +535,7 @@ impl Parser {
             });
         }
         let expr = self.parse_expr();
-        self.eat(&TokenKind::Semi);
+        self.expect(&TokenKind::Semi, ";");
         Some(Stmt::ExprStmt(expr, self.prev().span))
     }
 
@@ -664,7 +664,7 @@ impl Parser {
                     args.push(self.parse_expr());
                     self.eat(&TokenKind::Comma);
                 }
-                self.eat(&TokenKind::RParen);
+                self.expect(&TokenKind::RParen, ")");
                 expr = Expr::Call {
                     callee: Box::new(expr),
                     args,
@@ -730,7 +730,7 @@ impl Parser {
                     }
                     self.eat(&TokenKind::Comma);
                 }
-                self.eat(&TokenKind::RParen);
+                self.expect(&TokenKind::RParen, ")");
                 if self.check(&TokenKind::Arrow) {
                     self.bump();
                     is_arrow = true;
@@ -746,7 +746,7 @@ impl Parser {
                     // Bukan arrow → rollback dan parse sebagai paren biasa.
                     self.pos = save;
                     let inner = self.parse_expr();
-                    self.eat(&TokenKind::RParen);
+                    self.expect(&TokenKind::RParen, ")");
                     inner
                 }
             }
@@ -757,7 +757,7 @@ impl Parser {
                     items.push(self.parse_expr());
                     self.eat(&TokenKind::Comma);
                 }
-                self.eat(&TokenKind::RBracket);
+                self.expect(&TokenKind::RBracket, "]");
                 Expr::Array(items, span)
             }
             Some(TokenKind::LBrace) => {
@@ -767,7 +767,7 @@ impl Parser {
                     let pstart = self.current().span;
                     if let Some(TokenKind::Ident(key)) = self.peek_kind().cloned() {
                         self.bump();
-                        self.eat(&TokenKind::Colon);
+                        self.expect(&TokenKind::Colon, ":");
                         let value = self.parse_expr();
                         props.push(PropLiteral {
                             name: key,
@@ -782,7 +782,7 @@ impl Parser {
                     }
                     self.eat(&TokenKind::Comma);
                 }
-                self.eat(&TokenKind::RBrace);
+                self.expect(&TokenKind::RBrace, "}");
                 Expr::Object(props, span)
             }
             Some(TokenKind::Lt) => {
@@ -808,7 +808,7 @@ impl Parser {
                 if self.check(&TokenKind::LBrace) {
                     self.bump();
                     let v = self.parse_expr();
-                    self.eat(&TokenKind::RBrace);
+                    self.expect(&TokenKind::RBrace, "}");
                     Some(v)
                 } else if let Some(TokenKind::String(s)) = self.peek_kind().cloned() {
                     self.bump();
@@ -829,14 +829,14 @@ impl Parser {
         let end = if self.eat(&TokenKind::SlashGt).is_some() {
             self.prev().span
         } else {
-            self.eat(&TokenKind::Gt);
+            self.expect(&TokenKind::Gt, ">");
             // Anak elemen.
             while !self.check(&TokenKind::LtSlash) && !self.at_eof() {
                 children.push(self.parse_expr());
             }
-            self.eat(&TokenKind::LtSlash);
+            self.expect(&TokenKind::LtSlash, "</");
             self.expect_ident("nama elemen penutup");
-            self.eat(&TokenKind::Gt);
+            self.expect(&TokenKind::Gt, ">");
             self.prev().span
         };
         Element {
@@ -901,6 +901,16 @@ impl Parser {
         }
     }
 
+    /// Wajib ada: makan token `kind`, atau laporkan error "diharapkan {what}"
+    /// bila hilang (P1-02: jangan biarkan delimiter terlewat diam → AST miring).
+    /// Selalu maju satu token untuk recovery error.
+    fn expect(&mut self, kind: &TokenKind, what: &str) {
+        if !self.check(kind) {
+            self.error_here(&format!("diharapkan {what}"));
+        }
+        self.bump();
+    }
+
     fn eat_kind(&mut self) -> Option<TokenKind> {
         let kind = self.peek_kind()?.clone();
         self.bump();
@@ -932,7 +942,7 @@ mod tests {
     use super::*;
 
     fn parse(src: &str) -> Module {
-        let tokens = crate::lexer::Lexer::new(src).tokenize();
+        let (tokens, _lex_diags) = crate::lexer::Lexer::new(src).tokenize();
         let mut parser = Parser::new(tokens);
         parser.parse_module()
     }
@@ -1022,7 +1032,7 @@ mod tests {
             "(((((",
             "window App { title: \"x\";",
         ] {
-            let tokens = crate::lexer::Lexer::new(src).tokenize();
+            let (tokens, _lex_diags) = crate::lexer::Lexer::new(src).tokenize();
             let mut parser = Parser::new(tokens);
             let _ = parser.parse_module();
             // Tidak panic = lolos; diagnostik boleh ada.
