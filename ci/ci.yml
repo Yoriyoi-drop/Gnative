@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  # Backend LLVM (inkwell) butuh LLVM 18 sistem.
+  LLVM_SYS_180_PREFIX: /usr/lib/llvm-18
+  # CI wajib punya libruntime — test e2e TIDAK boleh skip diam (audit P1-14).
+  GNATIVE_REQUIRE_RUNTIME: "1"
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pasang LLVM 18 + linker
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y llvm-18-dev libclang-18-dev clang-18 build-essential
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --check
+
+      - name: Clippy (deny warnings)
+        run: cargo clippy --workspace -- -D warnings
+
+      - name: Check workspace
+        run: cargo check --workspace
+
+      - name: Build libruntime (staticlib)
+        run: cargo build -p gnative-runtime
+
+      - name: Test workspace
+        run: cargo test --workspace
+
+  # Gerbang cuda tetap dibangun dengan fitur mati (default harus hijau
+  # tanpa CUDA toolkit — AGENTS.md §5).
+  default-no-cuda:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pasang LLVM 18 + linker
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y llvm-18-dev libclang-18-dev clang-18 build-essential
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Check tanpa fitur cuda
+        run: cargo check --workspace

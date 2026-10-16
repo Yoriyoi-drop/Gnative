@@ -1,9 +1,10 @@
 //! Pembangun scene UI — node tree deklaratif dari binary `.gn` → `Scene`.
 //!
 //! Binary hasil kompiler tidak boleh memakai tipe Rust di batas ABI, jadi
-//! node tree dikumpulkan sebagai [`UiNode`] lewat panggilan C-ABI di
-//! `scene_bridge.rs`. File ini murni data + konversi ke `Scene` — tanpa
-//! window maupun event loop, sehingga bisa diuji tanpa GPU/display.
+//! node tree dikumpulkan sebagai [`UiNode`] lalu dikonversi ke `Scene`.
+//! Jalur C-ABI aktual ada di `intrinsics.rs` (builder `gn_scene_*`); file ini
+//! menyediakan jalur data murni + konversi ke `Scene` — tanpa window maupun
+//! event loop, sehingga bisa diuji tanpa GPU/display.
 //!
 //! Posisi dan ukuran akhir dihitung oleh `Scene::layout()` (lihat
 //! `gnative-gfx`), bukan di sini.

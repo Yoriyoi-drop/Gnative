@@ -605,4 +605,24 @@ changelog + checklist G. Tanpa itu, rilis apa pun harus bukan v1.0.0.
 - Status P0-09: CLOSED (semua path terkungkung di root project/container;
   `..`/absolut/separator Windows ditolak dengan error jelas).
 
+### Iterasi 11 — P1-14 CI/test CLI/e2e jujur + P1-16 ui_builder (16 Okt 2026)
+
+- P1-14: definisi CI di `ci/ci.yml` + `ci/README.md` (path `.github/workflows/`
+  tak bisa di-push — token OAuth tanpa scope `workflow`; salin manual):
+  fmt + clippy
+  -D warnings + check + build libruntime + `cargo test --workspace`
+  (LLVM 18 dipasang). Env `GNATIVE_REQUIRE_RUNTIME=1` membuat test e2e
+  **gagal keras** bila libruntime absen (bukan skip diam) — helper
+  `runtime_lib_or_skip` di `pipeline.rs`. Test CLI (0 → 5) di
+  `gnative-cli/lib.rs` (help/no-arg/unknown/new traversal/container inspect
+  traversal).
+- P1-16: `ui_builder.rs` didaftarkan (`pub mod ui_builder`) → 4 test mati kini
+  jalan (`cargo test -p gnative-runtime` 14 → 18); doc yang menunjuk
+  `scene_bridge.rs` (P3-01) dikoreksi.
+- Verifikasi: `cargo test -p gnative-compiler` 64, `gnative-cli` 5,
+  `gnative-runtime` 18 lolos (GNATIVE_REQUIRE_RUNTIME=1, tanpa skip);
+  fmt/clippy hijau.
+- Status P1-14: CLOSED (CI + test CLI + e2e fail bila prasyarat absen).
+- Status P1-16: CLOSED (test = grep test).
+
 

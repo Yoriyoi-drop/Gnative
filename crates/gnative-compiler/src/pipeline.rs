@@ -382,6 +382,27 @@ fn collect_gn_files(src_dir: &Path) -> GnResult<Vec<PathBuf>> {
 mod tests {
     use super::*;
 
+    /// Path libruntime (`target/debug/libgnative_runtime.a`).
+    ///
+    /// `Some` bila ada; `None` → test di-skip (dev tanpa runtime). Bila env
+    /// `GNATIVE_REQUIRE_RUNTIME` di-set (CI), prasyarat absen = **gagal keras**
+    /// (bukan skip diam) — lihat audit P1-14.
+    fn runtime_lib_or_skip(name: &str) -> Option<PathBuf> {
+        let lib = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/debug/libgnative_runtime.a");
+        if lib.exists() {
+            return Some(lib);
+        }
+        if std::env::var("GNATIVE_REQUIRE_RUNTIME").is_ok() {
+            panic!(
+                "{name}: libruntime wajib ada (GNATIVE_REQUIRE_RUNTIME di-set) — \
+                 jalankan `cargo build -p gnative-runtime`"
+            );
+        }
+        eprintln!("skip {name}: libruntime belum di-build");
+        None
+    }
+
     /// Compile fungsi `.gn` → object → link (libc saja) → eksekusi → stdout.
     ///
     /// Membuktikan logika runtime (if/for/aritmatika/perbandingan/call)
@@ -830,12 +851,9 @@ window App { title: "x"; root: <Counter/>; }
             body,
         });
 
-        let runtime_lib = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../target/debug/libgnative_runtime.a");
-        if !runtime_lib.exists() {
-            eprintln!("skip e2e_state: libruntime belum di-build");
+        let Some(runtime_lib) = runtime_lib_or_skip("e2e_state") else {
             return;
-        }
+        };
         let dir = std::env::temp_dir().join(format!("gnative-state-e2e-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -960,12 +978,9 @@ window App { title: "x"; root: <Counter/>; }
             body,
         });
 
-        let runtime_lib = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../target/debug/libgnative_runtime.a");
-        if !runtime_lib.exists() {
-            eprintln!("skip e2e_indirect: libruntime belum di-build");
+        let Some(runtime_lib) = runtime_lib_or_skip("e2e_indirect") else {
             return;
-        }
+        };
         let dir = std::env::temp_dir().join(format!("gnative-ind-e2e-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -1059,12 +1074,9 @@ function verify(): boolean {
             body,
         });
 
-        let runtime_lib = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../target/debug/libgnative_runtime.a");
-        if !runtime_lib.exists() {
-            eprintln!("skip e2e_release: libruntime belum di-build");
+        let Some(runtime_lib) = runtime_lib_or_skip("e2e_release") else {
             return;
-        }
+        };
         let dir = std::env::temp_dir().join(format!("gnative-rel-e2e-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
