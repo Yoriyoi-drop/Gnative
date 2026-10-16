@@ -652,6 +652,21 @@ function verify(): boolean {
             ),
             "OK"
         );
+        // Modulo (P1-05): `%` dikompilasi nyata (frem).
+        assert_eq!(
+            e2e_run(
+                "function verify(): boolean { return 10 % 3 == 1; }",
+                "verify"
+            ),
+            "OK"
+        );
+        assert_eq!(
+            e2e_run(
+                "function verify(): boolean { return 10 % 3 == 2; }",
+                "verify"
+            ),
+            "GAGAL"
+        );
     }
 
     #[test]

@@ -576,6 +576,14 @@ impl<'a> FuncCodegen<'a> {
                     MirBinOp::Sub => self.builder.ins().fsub(av, bv),
                     MirBinOp::Mul => self.builder.ins().fmul(av, bv),
                     MirBinOp::Div => self.builder.ins().fdiv(av, bv),
+                    // Cranelift tak punya `frem`: fmod(a,b) = a - trunc(a/b)*b.
+                    MirBinOp::Mod => {
+                        let q = self.builder.ins().fdiv(av, bv);
+                        let qi = self.builder.ins().fcvt_to_sint_sat(types::I64, q);
+                        let qf = self.builder.ins().fcvt_from_sint(types::F64, qi);
+                        let prod = self.builder.ins().fmul(qf, bv);
+                        self.builder.ins().fsub(av, prod)
+                    }
                 };
                 self.def_slot(slot, v, SlotTy::F64);
             }

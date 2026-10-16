@@ -189,7 +189,7 @@ window App {
 | `if`/`else` | `if (count > 0) { ... } else { ... }` |
 | `for` | `for (n of [1, 2, 3]) { ... }` — array literal, di-unroll |
 | `return` | `return expr;` / `return;` |
-| Ekspresi | aritmatika `+ - * /`, perbandingan `< <= > >= == !=`, `!`, `&&`/`||` (short-circuit), concat string literal `"a" + "b"` |
+| Ekspresi | aritmatika `+ - * / %`, perbandingan `< <= > >= == !=`, `!`, `&&`/`\|\|` (short-circuit), concat string literal `"a" + "b"` |
 | Assignment | `x = v`, `x += v`, `x -= v` (variabel lokal) |
 | `window` | `window App { title: ...; size: [w, h]; root: <...>; }` |
 | `component` | `component Badge { render(): Element { return <text content={props.label}/>; } }` — **diekspansi compile-time** |
@@ -198,7 +198,19 @@ window App {
 | `onClick` | `onClick={this.method}` pada `<button>` di `render()` stateful — klik panggil method + rebuild + redraw |
 | Elemen deklaratif | `<vstack gap={8}> <text .../> </vstack>` + komponen user `<Badge label="x"/>` |
 | Atribut elemen | `content={expr}`, `size={n}`, `label={expr}`, `gap`, `placeholder` |
-| Komentar | `// komentar` |
+| Komentar | `// baris` dan `/* blok */` |
+| Tag didukung | `text`, `button`, `input`, `vstack` (tag lain = error, sejalan checker↔lower) |
+
+**Precedence operator** (tertinggi → terendah; asosiatif kiri; kontrak parser):
+
+| Prec | Operator | |
+|---|---|---|
+| 6 | `*` `/` `%` | |
+| 5 | `+` `-` | |
+| 4 | `==` `!=` `<` `<=` `>` `>=` | |
+| 3 | `&&` | |
+| 2 | `\|\|` | |
+| 1 | `=` `+=` `-=` | assignment (right-assoc) |
 
 > Milestone 0.9: subset yang dikompilasi ke native = `window` + elemen
 > deklaratif + komponen stateless (ekspansi compile-time, props disubstitusi)
@@ -579,7 +591,7 @@ apps/hello/container/artifacts/    → hello.o + binary native hasil build
 | **0.1 — Pondasi** | Workspace, core types, bahasa .gn (lexer/parser/checker), CLI, runtime winit, renderer wgpu (quad), backend CUDA (kerangka). |
 | **0.2–0.6** | Layout runtime, generated crate (lama: `.gn → .rs`), komponen, event, state. |
 | 0.7 — Kompiler native | Pipeline `.gn → IR → MIR → Cranelift → object → linker → binary native`; **hapus generate Rust**; libruntime wgpu/CUDA di-link (intrinsik C-ABI); window native nyata; project 100% `.gn`. |
-| **0.8 — Bahasa lengkap (parsial, saat ini)** | `function` + params/return, `let`, `if`/`else`, `for (x of [...])`, ekspresi aritmatika & perbandingan (`< <= > >= == !=`), `!`, `&&`/`||` short-circuit, concat string literal, perbandingan string (`==`) — dikompilasi ke MIR → Cranelift. |
+| **0.8 — Bahasa lengkap (parsial, saat ini)** | `function` + params/return, `let`, `if`/`else`/`else if`, `for (x of [...])`, ekspresi aritmatika & perbandingan (`+ - * / %`, `< <= > >= == !=`), `!`, `&&`/`\|\|` short-circuit, concat string literal, perbandingan string (`==`) — dikompilasi ke MIR → Cranelift. |
 | **0.9 — Komponen + cross-compile (parsial, saat ini)** | `component` stateless diekspansi compile-time (`<Badge label="x"/>` → render body dengan `props` disubstitusi, tanpa overhead runtime); CLI gaya npm (`init`, `install`, `list`/`ls`, `start`, `dev` watch+auto-restart, `test`, `publish` stub); cross-compile `--target <triple>` (Cranelift multi-arch). |
 | 0.9 — Stateful (saat ini) | `state` + event klik + multi-instance + props: init + baca (`gn_state_get_*`) + mutasi method tersalin per instance (`Counter__0__inc`, kunci `Counter#0`); `onClick={this.m}` → hit-test → dispatch → rebuild + redraw. Render divalidasi saat definisi (props dummy) + di-lower per situs. |
 | 0.10 — Teks (saat ini, parsial) | `interface` penuh (wajib/opsional, union literal, cek props per pemakaian); font atlas bitmap 5x7 ASCII (teks nyata ganti placeholder; non-ASCII dilewati). |

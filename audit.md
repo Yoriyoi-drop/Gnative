@@ -761,4 +761,20 @@ changelog + checklist G. Tanpa itu, rilis apa pun harus bukan v1.0.0.
   fmt/clippy bersih.
 - Status P3-01..07: CLOSED.
 
+### Iterasi 18 — P1-05 spec precedence + `%` (16 Okt 2026)
+
+- Precedence kini **terdokumentasi** (tabel di `parser.rs::parse_binary` +
+  DESIGN.md §5.3): `*`/`/`/`%` > `+`/`-` > perbandingan > `&&` > `||` >
+  assignment. Perilaku parser = tabel (kontrak).
+- `%` yang tadinya hanya di-lex kini **diparse & dikompilasi**: `BinOp::Mod` →
+  `IrBinOp::Mod` → `MirBinOp::Mod` → Cranelift (`a - trunc(a/b)*b`, karena
+  Cranelift tak punya `frem`) / LLVM (`build_float_rem`).
+- Tag `<hstack>`/`<image>` yang dulu "dikenal" checker tapi ditolak lower kini
+  **error di checker** (sejalan `build`): tag didukung = `text/button/input/vstack`.
+- Komentar blok `/* */` & ident unicode sudah didokumentasikan (Iterasi 15).
+- Test: parser (`precedence_kali_sebelum_tambah`, `modulo_*`), lower
+  (`modulo_didukung_di_lower`), checker (`tag_tak_didukung_error_sejalan_kompiler`),
+  e2e `e2e_run` modulo. `cargo test --workspace` hijau; fmt/clippy bersih.
+- Status P1-05: CLOSED. **Semua P0/P1/P2/P3 (01–07) kini tertutup.**
+
 

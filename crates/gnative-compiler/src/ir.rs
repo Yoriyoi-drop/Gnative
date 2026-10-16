@@ -151,6 +151,8 @@ pub enum IrBinOp {
     Sub,
     Mul,
     Div,
+    /// Sisa bagi (`%`).
+    Mod,
     Eq,
     Ne,
     /// Perbandingan relasional (f64).

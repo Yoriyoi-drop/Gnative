@@ -590,6 +590,7 @@ fn lower_expr_with_state(
                 BinOp::Sub => IrBinOp::Sub,
                 BinOp::Mul => IrBinOp::Mul,
                 BinOp::Div => IrBinOp::Div,
+                BinOp::Mod => IrBinOp::Mod,
                 BinOp::EqEq => IrBinOp::Eq,
                 BinOp::NotEq => IrBinOp::Ne,
                 BinOp::Lt => IrBinOp::Lt,
@@ -827,6 +828,7 @@ fn lower_expr(e: &Expr) -> Result<IrExpr, String> {
                 BinOp::Sub => IrBinOp::Sub,
                 BinOp::Mul => IrBinOp::Mul,
                 BinOp::Div => IrBinOp::Div,
+                BinOp::Mod => IrBinOp::Mod,
                 BinOp::EqEq => IrBinOp::Eq,
                 BinOp::NotEq => IrBinOp::Ne,
                 BinOp::Lt => IrBinOp::Lt,
@@ -1990,6 +1992,19 @@ mod tests {
         assert!(
             out.diagnostics.iter().any(|d| d.contains("angka")),
             "size non-literal harus error, diagnostics: {:?}",
+            out.diagnostics
+        );
+    }
+
+    #[test]
+    fn modulo_didukung_di_lower() {
+        // P1-05: `%` kini di-lower (bukan ditolak/diam).
+        let src = "function f(): number { return 10 % 3; }";
+        let (module, _) = parse_source(src);
+        let out = lower(&module).unwrap();
+        assert!(
+            out.diagnostics.is_empty(),
+            "`%` harus didukung, diagnostics: {:?}",
             out.diagnostics
         );
     }

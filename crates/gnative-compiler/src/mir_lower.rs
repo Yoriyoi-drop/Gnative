@@ -481,7 +481,9 @@ impl<'a> Lowerer<'a> {
             IrExpr::Neg(_) => MirTy::F64,
             IrExpr::Not(_) => MirTy::Bool,
             IrExpr::Bin(op, ..) => match op {
-                IrBinOp::Add | IrBinOp::Sub | IrBinOp::Mul | IrBinOp::Div => MirTy::F64,
+                IrBinOp::Add | IrBinOp::Sub | IrBinOp::Mul | IrBinOp::Div | IrBinOp::Mod => {
+                    MirTy::F64
+                }
                 _ => MirTy::Bool,
             },
             IrExpr::Call(name, _) => self.func_ret.get(name).copied().unwrap_or(MirTy::F64),
@@ -622,7 +624,7 @@ impl<'a> Lowerer<'a> {
     /// Lower operator biner; `&&`/`||` memakai short-circuit.
     fn lower_bin(&mut self, op: IrBinOp, l: &IrExpr, r: &IrExpr, body: &mut Vec<MirInst>) -> u32 {
         match op {
-            IrBinOp::Add | IrBinOp::Sub | IrBinOp::Mul | IrBinOp::Div => {
+            IrBinOp::Add | IrBinOp::Sub | IrBinOp::Mul | IrBinOp::Div | IrBinOp::Mod => {
                 let a = self.lower_expr(l, body);
                 let b = self.lower_expr(r, body);
                 let mop = match op {
@@ -630,6 +632,7 @@ impl<'a> Lowerer<'a> {
                     IrBinOp::Sub => MirBinOp::Sub,
                     IrBinOp::Mul => MirBinOp::Mul,
                     IrBinOp::Div => MirBinOp::Div,
+                    IrBinOp::Mod => MirBinOp::Mod,
                     _ => unreachable!(),
                 };
                 self.push(MirInst::BinF64 { op: mop, a, b }, body)

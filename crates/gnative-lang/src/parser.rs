@@ -626,6 +626,18 @@ impl Parser {
         }
     }
 
+    /// Ekspresi biner dengan **tabel precedence** (tertinggi → terendah):
+    ///
+    /// | Prec | Operator            | Asosiatif |
+    /// |------|---------------------|-----------|
+    /// | 6    | `*` `/` `%`         | kiri      |
+    /// | 5    | `+` `-`             | kiri      |
+    /// | 4    | `==` `!=` `<` `<=` `>` `>=` | kiri |
+    /// | 3    | `&&`                | kiri      |
+    /// | 2    | `\|\|`              | kiri      |
+    ///
+    /// `=`/`+=`/`-=` (assignment) lebih rendah lagi dan ditangani `parse_assign`.
+    /// Spec ini adalah kontrak: perilaku parser = tabel di atas.
     fn parse_binary(&mut self, min_prec: u8) -> Expr {
         let mut left = self.parse_unary();
         loop {
@@ -644,6 +656,7 @@ impl Parser {
                 Some(TokenKind::Minus) => (BinOp::Sub, 5),
                 Some(TokenKind::Star) => (BinOp::Mul, 6),
                 Some(TokenKind::Slash) => (BinOp::Div, 6),
+                Some(TokenKind::Percent) => (BinOp::Mod, 6),
                 _ => break,
             };
             if prec < min_prec {
@@ -1140,6 +1153,53 @@ mod tests {
         let mut parser = Parser::new(Vec::new());
         let m = parser.parse_module();
         assert!(m.decls.is_empty());
+    }
+
+    // --- P1-05: precedence + `%` ---
+
+    #[test]
+    fn precedence_kali_sebelum_tambah() {
+        // `1 + 2 * 3` → Add(1, Mul(2, 3)).
+        let m = parse("function f(): number { return 1 + 2 * 3; }");
+        match &m.decls[0] {
+            Decl::Function(f) => match &f.body[0] {
+                Stmt::Return(Expr::BinOp { op, right, .. }, _) => {
+                    assert_eq!(*op, BinOp::Add);
+                    assert!(matches!(right.as_ref(), Expr::BinOp { op: BinOp::Mul, .. }));
+                }
+                other => panic!("harusnya BinOp Add, dapat {other:?}"),
+            },
+            _ => panic!("harusnya function"),
+        }
+    }
+
+    #[test]
+    fn modulo_diparse_sebagai_binop() {
+        // P1-05: `%` yang dulu hanya di-lex kini jadi operator.
+        let m = parse("function f(): number { return 7 % 3; }");
+        match &m.decls[0] {
+            Decl::Function(f) => match &f.body[0] {
+                Stmt::Return(Expr::BinOp { op, .. }, _) => assert_eq!(*op, BinOp::Mod),
+                other => panic!("harusnya BinOp Mod, dapat {other:?}"),
+            },
+            _ => panic!("harusnya function"),
+        }
+    }
+
+    #[test]
+    fn modulo_seprecedence_dengan_kali() {
+        // `a % b * c` → `(a % b) * c` (asosiatif kiri, prec sama).
+        let m = parse("function f(): number { return 8 % 3 * 2; }");
+        match &m.decls[0] {
+            Decl::Function(f) => match &f.body[0] {
+                Stmt::Return(Expr::BinOp { op, left, .. }, _) => {
+                    assert_eq!(*op, BinOp::Mul);
+                    assert!(matches!(left.as_ref(), Expr::BinOp { op: BinOp::Mod, .. }));
+                }
+                other => panic!("harusnya Mul(Mod,..), dapat {other:?}"),
+            },
+            _ => panic!("harusnya function"),
+        }
     }
 
     // --- P2-03: else-if tanpa hack pos -= 1 ---

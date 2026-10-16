@@ -112,6 +112,8 @@ pub enum MirBinOp {
     Sub,
     Mul,
     Div,
+    /// Sisa bagi (`%`).
+    Mod,
 }
 
 /// Operator perbandingan MIR.

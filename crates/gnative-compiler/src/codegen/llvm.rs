@@ -641,6 +641,7 @@ impl<'ctx, 'm> ModuleGen<'ctx, 'm> {
                     MirBinOp::Sub => self.builder.build_float_sub(af, bf, "fsub"),
                     MirBinOp::Mul => self.builder.build_float_mul(af, bf, "fmul"),
                     MirBinOp::Div => self.builder.build_float_div(af, bf, "fdiv"),
+                    MirBinOp::Mod => self.builder.build_float_rem(af, bf, "frem"),
                 }
                 .map_err(err_llvm)?;
                 self.def_slot(gen, slot, BasicValueEnum::FloatValue(v))?;

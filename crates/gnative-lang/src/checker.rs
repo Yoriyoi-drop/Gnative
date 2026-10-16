@@ -392,15 +392,16 @@ impl Checker {
             }
             Expr::Element(el, _) => {
                 let tag = el.tag.clone();
-                if !self.component_names.contains(&tag)
-                    && !matches!(
-                        tag.as_str(),
-                        "button" | "text" | "vstack" | "hstack" | "image" | "input"
-                    )
-                {
-                    out.push(Diagnostic::warning(
+                // P1-05: daftar tag harus **sama** dengan yang didukung
+                // kompiler (`lower.rs`) agar `check` sejalan dengan `build`.
+                const SUPPORTED_TAGS: &[&str] = &["button", "text", "vstack", "input"];
+                if !self.component_names.contains(&tag) && !SUPPORTED_TAGS.contains(&tag.as_str()) {
+                    out.push(Diagnostic::error(
                         el.span,
-                        format!("elemen `<{tag}>` tidak dikenal"),
+                        format!(
+                            "elemen `<{tag}>` tidak didukung kompiler \
+                             (didukung: button/text/vstack/input atau komponen)"
+                        ),
                     ));
                 }
                 // Pemakaian komponen ber-props: validasi atribut vs interface.
@@ -846,5 +847,21 @@ mod tests {
             "error tipe harus berlokasi, span={}",
             d.span
         );
+    }
+
+    #[test]
+    fn tag_tak_didukung_error_sejalan_kompiler() {
+        // P1-05: `hstack`/`image` dulu "dikenal" checker tapi ditolak lower →
+        // sekarang error (sejalan dengan `build`).
+        for tag in ["hstack", "image"] {
+            let src = format!("component C {{ render(): Element {{ return <{tag} />; }} }}");
+            let (_, diags) = parse_source(&src);
+            assert!(
+                diags
+                    .iter()
+                    .any(|d| d.message.contains(tag) && d.is_error()),
+                "`{tag}` harus error, diags: {diags:?}"
+            );
+        }
     }
 }

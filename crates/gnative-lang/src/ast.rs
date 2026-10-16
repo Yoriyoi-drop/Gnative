@@ -223,6 +223,8 @@ pub enum BinOp {
     Sub,
     Mul,
     Div,
+    /// Sisa bagi (`%`).
+    Mod,
     EqEq,
     NotEq,
     /// Perbandingan relasional.
@@ -292,6 +294,7 @@ impl std::fmt::Display for Expr {
                     BinOp::Sub => "-",
                     BinOp::Mul => "*",
                     BinOp::Div => "/",
+                    BinOp::Mod => "%",
                     BinOp::EqEq => "==",
                     BinOp::NotEq => "!=",
                     BinOp::Lt => "<",
