@@ -646,5 +646,27 @@ changelog + checklist G. Tanpa itu, rilis apa pun harus bukan v1.0.0.
 - Status P1-15: CLOSED (batas depth/unroll/ukuran; sisa: fuzzer corpus ala
   roadmap — dicatat).
 
+### Iterasi 13 — P1-11/12/13 graph, build jujur, cross-link (16 Okt 2026)
+
+- P1-11: `pipeline.rs` kini memakai `DepGraph` nyata (node = file `.gn`,
+  edge = target resolusi) + `detect_cycles` → siklus menggagalkan build;
+  package yang hilang jadi **error** (bukan diagnostik); cek versi
+  `[gnative].version` vs compiler (major beda = error, minor/patch = warning).
+  Multi-window (`ir.window` timpa) kini error. `cli/graph.rs` rekursif +
+  exit non-zero pada siklus.
+- P1-12: `config.rs` punya `warnings` (default `[project]`/`name`/`version`
+  tidak lagi diam); `pipeline` meneruskan ke report. `cli/build.rs` gagal
+  (exit 1) bila binary None — fresh checkout tanpa libruntime = non-0.
+- P1-13: `linker::find_linker_for(Some(triple))` **tanpa** fallback host;
+  `find_runtime_dir(project_dir, target)` mencari `target/<triple>/…`.
+- Test: `project_hilang/name_hilang` (config), `package_hilang_gagalkan_build`,
+  `multi_window_ditolak`, `siklus_dependency_ditolak` (pipeline),
+  `cross_tanpa_toolchain_tidak_fallback_host` (linker). `cargo test -p
+  gnative-compiler` 71 lolos; fmt/clippy hijau.
+- Status P1-11: CLOSED (graph dipakai; siklus & versi salah gagalkan build).
+- Status P1-12: CLOSED (config warning + build gagal bila binary None).
+- Status P1-13: CLOSED (tanpa fallback host; runtime per-target dicari).
+
+
 
 

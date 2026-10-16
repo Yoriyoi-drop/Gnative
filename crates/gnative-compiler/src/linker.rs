@@ -87,15 +87,18 @@ pub fn find_linker() -> Option<&'static str> {
     })
 }
 
-/// Cari linker untuk target: `<triple>-cc` dulu, lalu host linker.
+/// Cari linker untuk target.
+///
+/// - `None` (host): `cc`/`clang`/`gcc` host.
+/// - `Some(triple)`: **hanya** `<triple>-cc`/`-clang`/`-gcc`. Tidak ada
+///   fallback ke host linker — memakai `cc` host untuk target lain
+///   menghasilkan link yang menyesatkan (audit P1-13). Bila tak ada
+///   cross-toolchain → `None` → pemanggil melaporkan error jelas.
 pub fn find_linker_for(target: Option<&str>) -> Option<String> {
-    let mut candidates: Vec<String> = Vec::new();
-    if let Some(t) = target {
-        for base in LINKERS {
-            candidates.push(format!("{t}-{base}"));
-        }
-    }
-    candidates.extend(LINKERS.iter().map(|s| s.to_string()));
+    let candidates: Vec<String> = match target {
+        Some(t) => LINKERS.iter().map(|base| format!("{t}-{base}")).collect(),
+        None => LINKERS.iter().map(|s| s.to_string()).collect(),
+    };
 
     candidates.into_iter().find(|candidate| {
         Command::new(candidate)
@@ -110,15 +113,20 @@ pub fn find_linker_for(target: Option<&str>) -> Option<String> {
 ///
 /// Libruntime dibangun dari repo Gnative (`cargo build -p gnative-runtime`),
 /// jadi `target/debug` bisa berada di project `.gn` maupun di direktori
-/// induknya (root repo).
-pub fn find_runtime_dir(project_dir: &Path) -> Option<PathBuf> {
+/// induknya (root repo). Untuk cross-compile, cari `target/<triple>/…`
+/// (audit P1-13) — jangan pakai libruntime host untuk target lain.
+pub fn find_runtime_dir(project_dir: &Path, target: Option<&str>) -> Option<PathBuf> {
     // Pakai path absolut agar walk ke parent sampai root repo benar.
     let root = project_dir
         .canonicalize()
         .unwrap_or_else(|_| project_dir.to_path_buf());
+    let subs: Vec<String> = match target {
+        Some(t) => vec![format!("target/{t}/debug"), format!("target/{t}/release")],
+        None => vec!["target/debug".to_string(), "target/release".to_string()],
+    };
     let mut dir = Some(root.as_path());
     while let Some(current) = dir {
-        for sub in ["target/debug", "target/release"] {
+        for sub in &subs {
             let candidate = current.join(sub);
             if candidate.join(RUNTIME_LIB).exists() {
                 return Some(candidate);
@@ -137,5 +145,16 @@ mod tests {
     fn linker_detected() {
         // Lingkungan build harus punya setidaknya satu linker.
         assert!(find_linker().is_some(), "tidak ada cc/clang/gcc");
+    }
+
+    #[test]
+    fn cross_tanpa_toolchain_tidak_fallback_host() {
+        // P1-13: target tanpa cross-toolchain → None (BUKAN host cc).
+        assert!(
+            find_linker_for(Some("definitely-not-a-real-triple-xyz")).is_none(),
+            "target asing tak boleh fallback ke linker host"
+        );
+        // Host tetap menemukan linker.
+        assert!(find_linker_for(None).is_some());
     }
 }

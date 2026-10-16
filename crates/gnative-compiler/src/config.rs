@@ -15,6 +15,9 @@ pub struct Config {
     pub dependencies: BTreeMap<String, String>,
     /// dev-dependency lokal (path).
     pub dev_dependencies: BTreeMap<String, String>,
+    /// Peringatan parse (mis. `[project]`/`name` hilang → default dipakai)
+    /// agar default tak diterapkan diam-diam (audit P1-12).
+    pub warnings: Vec<String>,
 }
 
 impl Config {
@@ -31,17 +34,33 @@ impl Config {
             .map_err(|e| GnError::Config(format!("gnative.toml tidak valid: {e}")))?;
         let mut cfg = Config::default();
 
-        if let Some(project) = value.get("project").and_then(|v| v.as_table()) {
-            cfg.project_name = project
-                .get("name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("app")
-                .to_string();
-            cfg.project_version = project
-                .get("version")
-                .and_then(|v| v.as_str())
-                .unwrap_or("0.1.0")
-                .to_string();
+        match value.get("project").and_then(|v| v.as_table()) {
+            Some(project) => {
+                cfg.project_name = match project.get("name").and_then(|v| v.as_str()) {
+                    Some(n) => n.to_string(),
+                    None => {
+                        cfg.warnings
+                            .push("`[project].name` tidak ada — memakai default `app`".into());
+                        "app".to_string()
+                    }
+                };
+                cfg.project_version = match project.get("version").and_then(|v| v.as_str()) {
+                    Some(v) => v.to_string(),
+                    None => {
+                        cfg.warnings
+                            .push("`[project].version` tidak ada — memakai default `0.1.0`".into());
+                        "0.1.0".to_string()
+                    }
+                };
+            }
+            None => {
+                cfg.warnings.push(
+                    "bagian `[project]` tidak ada — memakai default (name=`app`, version=`0.1.0`)"
+                        .into(),
+                );
+                cfg.project_name = "app".to_string();
+                cfg.project_version = "0.1.0".to_string();
+            }
         }
         if let Some(gnative) = value.get("gnative").and_then(|v| v.as_table()) {
             cfg.gnative_version = gnative
@@ -106,5 +125,24 @@ mod tests {
     #[test]
     fn invalid_toml() {
         assert!(Config::parse("{{{{").is_err());
+    }
+
+    #[test]
+    fn project_hilang_memberi_warning() {
+        // P1-12: `[project]` hilang → default dipakai tapi TIDAK diam.
+        let cfg = Config::parse("[dependencies]\n\"@gnative/ui\" = \"0.1.0\"\n").unwrap();
+        assert_eq!(cfg.project_name, "app");
+        assert!(
+            cfg.warnings.iter().any(|w| w.contains("[project]")),
+            "harus ada warning default, warnings: {:?}",
+            cfg.warnings
+        );
+    }
+
+    #[test]
+    fn name_hilang_memberi_warning() {
+        let cfg = Config::parse("[project]\nversion = \"1.2.3\"\n").unwrap();
+        assert_eq!(cfg.project_name, "app");
+        assert!(cfg.warnings.iter().any(|w| w.contains("name")));
     }
 }

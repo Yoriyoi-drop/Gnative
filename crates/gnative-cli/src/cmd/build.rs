@@ -34,9 +34,16 @@ pub fn run(args: &[String]) -> i32 {
             if let Some(obj) = &report.object_file {
                 println!("  object: {}", obj.display());
             }
-            if let Some(bin) = &report.binary {
-                println!("  binary: {}", bin.display());
-            }
+            // P1-12: build tanpa binary = sukses semu. Gagalkan dengan jelas
+            // (fresh checkout tanpa libruntime harus exit non-0).
+            let Some(bin) = &report.binary else {
+                eprintln!(
+                    "build gagal: binary native tidak dihasilkan \
+                     (libruntime belum dibangun? jalankan `cargo build -p gnative-runtime`)"
+                );
+                return 1;
+            };
+            println!("  binary: {}", bin.display());
             0
         }
         Err(e) => {

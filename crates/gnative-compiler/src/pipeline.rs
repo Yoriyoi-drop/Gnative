@@ -113,7 +113,7 @@ pub fn build_with_target(
     // 6. Link → binary native (object .gn + libruntime wgpu/cuda).
     //    Libruntime di-build dari repo Gnative (`cargo build -p gnative-runtime`).
     let binary = parsed.artifacts.join(&obj_name);
-    match linker::find_runtime_dir(project_dir) {
+    match linker::find_runtime_dir(project_dir, target) {
         Some(runtime_dir) => {
             match linker::link_with_target(&object_file, &runtime_dir, &binary, target) {
                 Ok(()) => parsed.report.binary = Some(binary),
@@ -187,7 +187,28 @@ fn collect_and_lower(project_dir: &Path, target: Option<&str>) -> GnResult<(Pars
     // 3. Parse + check setiap file (fingerprint untuk laporan incremental).
     let cache = Cache::open(&container)?;
     let mut report = BuildReport::default();
+    // Peringatan config (mis. `[project]`/name hilang → default) — jangan
+    // terapkan default diam-diam (audit P1-12).
+    report.diagnostics.extend(config.warnings.iter().cloned());
+    // P1-11: cek versi `[gnative].version` vs versi compiler. Major beda =
+    // error (inkompatibel); beda minor/patch = peringatan.
+    if !config.gnative_version.is_empty() {
+        let declared = &config.gnative_version;
+        let compiler = env!("CARGO_PKG_VERSION");
+        let major = |v: &str| v.split('.').next().unwrap_or("").to_string();
+        if major(declared) != major(compiler) {
+            report.diagnostics.push(format!(
+                "versi `gnative.toml` (`{declared}`) tidak kompatibel dengan compiler (`{compiler}`) — major berbeda"
+            ));
+            report.has_errors = true;
+        } else if declared != compiler {
+            report.diagnostics.push(format!(
+                "peringatan: versi `gnative.toml` (`{declared}`) ≠ compiler (`{compiler}`)"
+            ));
+        }
+    }
     let mut ir = IrModule::default();
+    let mut dep_graph = crate::graph::DepGraph::new();
 
     for file in &gn_files {
         let rel = relative_to(file, &src_dir).unwrap_or_else(|| file.display().to_string());
@@ -214,12 +235,23 @@ fn collect_and_lower(project_dir: &Path, target: Option<&str>) -> GnResult<(Pars
         // Resolusi `use` (package runtime tersedia setelah seed).
         let imports: Vec<String> = module.imports.iter().map(|i| i.path.clone()).collect();
         let resolution = Resolver::resolve(&imports, &container, &src_dir)?;
+        // P1-11: package yang hilang = error build (bukan sekadar diagnostik).
         for missing in &resolution.missing {
             report.diagnostics.push(format!(
                 "{}: package `{missing}` tidak ditemukan",
                 file.display()
             ));
+            report.has_errors = true;
         }
+        // Graf dependency: file → target (rel path lokal bila ada, else nama paket).
+        let mut edges: Vec<String> = Vec::new();
+        for (imp, path) in &resolution.packages {
+            match relative_to(path, &src_dir) {
+                Some(rel_target) => edges.push(rel_target),
+                None => edges.push(imp.clone()),
+            }
+        }
+        dep_graph.add_node(&rel, &edges);
 
         // Lowering → Semantic IR (project dan runtime digabung).
         let out = lower(&module)?;
@@ -230,10 +262,27 @@ fn collect_and_lower(project_dir: &Path, target: Option<&str>) -> GnResult<(Pars
         }
         report.diagnostics.extend(out.diagnostics.iter().cloned());
         if let Some(window) = out.module.window {
-            ir.window = Some(window);
+            // P1-06/P1-11: multi-window tidak didukung — jangan timpa diam.
+            if ir.window.is_some() {
+                report.diagnostics.push(format!(
+                    "{}: `window` kedua ditemukan — hanya satu window didukung",
+                    file.display()
+                ));
+                report.has_errors = true;
+            } else {
+                ir.window = Some(window);
+            }
         }
         ir.funcs.extend(out.module.funcs);
         ir.components.extend(out.module.components);
+    }
+
+    // P1-11: deteksi siklus dependency → gagalkan build.
+    for cycle in dep_graph.detect_cycles() {
+        report
+            .diagnostics
+            .push(format!("siklus dependency: {}", cycle.join(" → ")));
+        report.has_errors = true;
     }
 
     Ok((
@@ -1115,5 +1164,87 @@ function verify(): boolean {
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
         let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(stdout, "OK", "logika release harus benar");
+    }
+
+    // --- P1-11/12: graph, package hilang, multi-window, siklus ---
+
+    fn write_project(name: &str, files: &[(&str, &str)]) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("gnative-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        std::fs::write(
+            dir.join("gnative.toml"),
+            crate::config::Config::template("demo"),
+        )
+        .unwrap();
+        for (f, content) in files {
+            let p = dir.join("src").join(f);
+            if let Some(parent) = p.parent() {
+                std::fs::create_dir_all(parent).unwrap();
+            }
+            std::fs::write(p, content).unwrap();
+        }
+        dir
+    }
+
+    #[test]
+    fn package_hilang_gagalkan_build() {
+        // P1-11: `use` ke package tak ada → has_errors (bukan hanya diagnostik).
+        let dir = write_project(
+            "missdep",
+            &[(
+                "main.gn",
+                r#"use "@tak/ada";
+window App { title: "x"; root: <text content="y"/>; }"#,
+            )],
+        );
+        let report = build(&dir, BuildMode::Dev).unwrap();
+        assert!(report.has_errors, "package hilang harus menggagalkan build");
+        assert!(report
+            .diagnostics
+            .iter()
+            .any(|d| d.contains("tidak ditemukan")));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn multi_window_ditolak() {
+        // P1-06/11: dua window → error, tidak menimpa diam.
+        let dir = write_project(
+            "multiwin",
+            &[(
+                "main.gn",
+                r#"use "@gnative/ui";
+window A { title: "a"; root: <text content="x"/>; }
+window B { title: "b"; root: <text content="y"/>; }"#,
+            )],
+        );
+        let report = build(&dir, BuildMode::Dev).unwrap();
+        assert!(report.has_errors, "multi-window harus error");
+        assert!(report.diagnostics.iter().any(|d| d.contains("window")));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn siklus_dependency_ditolak() {
+        // P1-11: a.gn ↔ b.gn saling `use` → siklus → error.
+        let dir = write_project(
+            "cycle",
+            &[
+                (
+                    "a.gn",
+                    r#"use "b.gn";
+window App { title: "x"; root: <text content="y"/>; }"#,
+                ),
+                ("b.gn", r#"use "a.gn";"#),
+            ],
+        );
+        let report = build(&dir, BuildMode::Dev).unwrap();
+        assert!(
+            report.diagnostics.iter().any(|d| d.contains("siklus")),
+            "siklus harus terdeteksi, diagnostics: {:?}",
+            report.diagnostics
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
