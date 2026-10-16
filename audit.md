@@ -711,4 +711,32 @@ changelog + checklist G. Tanpa itu, rilis apa pun harus bukan v1.0.0.
   CLI (verbose/doctor). `cargo test --workspace` hijau; fmt/clippy bersih.
 - Status P2-01..06: CLOSED. Status P2-14: CLOSED.
 
+### Iterasi 16 — P2-07..13 integritas runtime/rendering (16 Okt 2026)
+
+- P2-07: `event_loop.rs` **redraw on-demand** — `RedrawRequested` tak lagi
+  memanggil `request_redraw` tanpa syarat (idle tidak busy-loop; `ControlFlow::Wait`).
+- P2-08: resize kini **layout ulang** scene + `scene.size` di-set; satuan
+  diseragamkan ke **piksel fisik** (kursor `CursorMoved` sudah fisik di winit
+  0.30 → hit-test HiDPI tepat). `ScaleFactorChanged` juga relayout.
+- P2-09: `gfx/scene.rs` `action_at` iterasi **dari atas ke bawah** (aksi yang
+  menimpa menang, bukan bawah); `Stack` di dalam `Group` kini di-layout
+  rekursif (`place_relative`). Test overlap + nested stack.
+- P2-10: `surface.rs` tak lagi indeks `[0]` buta — format/alpha mode kosong →
+  `GnError::Render` rapi; adapter sudah pakai `compatible_surface`.
+- P2-11: `Vertex::quad` **sanitasi NaN/Inf** + guard div0 (`w/h` 0 → aman);
+  **radius kini dirender** via SDF di shader (atribut `local`/`half`/`radius`);
+  clear alpha pakai `scene.clear.a`; vertex **di-cap** `MAX_VERTICES`; **scissor**
+  ke area scene.
+- P2-12: `input.rs` (baru) memetakan event winit → `gnative_core::event`
+  (netral, diuji tanpa display — mengaktifkan abstraksi yang tadinya mati);
+  keyboard/wheel/IME dinyatakan-tak-dukung (log verbose); `_window_id` tunggal.
+- P2-13: `state_store.rs` menyimpan string **disalin** (`CString` milik store,
+  tak dangling), jumlah entri **dibatasi** `MAX_STATE_ENTRIES`, lock pakai
+  `intrinsics::locked` (pulih dari poison, seragam). Callback dispatch sudah
+  melepas lock sebelum memanggil binary (tanpa deadlock re-entrancy).
+- Test: scene (overlap/nested-stack), vertex (div0/non-finite/radius), input
+  (mapping), state_store (string disalin), runtime `locked`. `cargo test
+  --workspace` hijau; fmt/clippy bersih.
+- Status P2-07..13: CLOSED.
+
 

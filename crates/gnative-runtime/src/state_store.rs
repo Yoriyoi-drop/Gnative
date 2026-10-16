@@ -5,25 +5,44 @@
 //! `gn_state_get_*` (render + method). Satu instance per tipe komponen
 //! (kunci = `(komponen, field)`; multi-instance = roadmap).
 //!
-//! Nilai string disimpan sebagai pointer ke pool string binary (hidup
-//! sepanjang proses, seperti `gn_scene_add_text`) — tidak di-copy.
+//! Nilai string **disalin** ke dalam store saat di-set, sehingga pointer yang
+//! dikembalikan `gn_state_get_str` selalu valid selama entri hidup (P2-13 —
+//! tidak lagi menyimpan pointer pool mentah yang bisa dangling).
+//! Jumlah entri dibatasi `MAX_STATE_ENTRIES` agar tak tumbuh tanpa batas.
 
 use std::collections::HashMap;
+use std::ffi::CString;
 use std::os::raw::c_char;
 use std::sync::{Mutex, OnceLock};
 
+/// Batas jumlah entri state (kunci) — cegah pertumbuhan tanpa batas (P2-13).
+const MAX_STATE_ENTRIES: usize = 4096;
+
 /// Nilai state satu field (semua slot; yang dipakai tergantung tipe).
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 struct StateVal {
     f64_val: f64,
     bool_val: bool,
-    str_ptr: usize,
+    /// String milik store (di-copy saat set) → pointer stabil selama hidup.
+    str_val: Option<CString>,
 }
 
 static STORE: OnceLock<Mutex<HashMap<(String, String), StateVal>>> = OnceLock::new();
 
 fn store() -> &'static Mutex<HashMap<(String, String), StateVal>> {
     STORE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Akses satu entri state dengan batas jumlah entri (P2-13).
+///
+/// Memulihkan lock yang ter-poison (seragam dengan `intrinsics::locked`).
+/// Bila entri baru melebihi `MAX_STATE_ENTRIES`, operasi diabaikan.
+fn with_entry<F: FnOnce(&mut StateVal)>(key: (String, String), f: F) {
+    let mut s = crate::intrinsics::locked(store());
+    if !s.contains_key(&key) && s.len() >= MAX_STATE_ENTRIES {
+        return;
+    }
+    f(s.entry(key).or_default());
 }
 
 /// Baca pasangan C string → `(komponen, field)`; `None` bila null.
@@ -46,9 +65,7 @@ pub unsafe extern "C" fn gn_state_set_f64(comp: *const c_char, field: *const c_c
     let Some(key) = key_of(comp, field) else {
         return;
     };
-    if let Ok(mut s) = store().lock() {
-        s.entry(key).or_default().f64_val = val;
-    }
+    with_entry(key, |v| v.f64_val = val);
 }
 
 /// Baca nilai `number`; belum di-init → `0.0`.
@@ -60,9 +77,9 @@ pub unsafe extern "C" fn gn_state_get_f64(comp: *const c_char, field: *const c_c
     let Some(key) = key_of(comp, field) else {
         return 0.0;
     };
-    store()
-        .lock()
-        .map(|s| s.get(&key).map(|v| v.f64_val).unwrap_or(0.0))
+    crate::intrinsics::locked(store())
+        .get(&key)
+        .map(|v| v.f64_val)
         .unwrap_or(0.0)
 }
 
@@ -75,9 +92,7 @@ pub unsafe extern "C" fn gn_state_set_bool(comp: *const c_char, field: *const c_
     let Some(key) = key_of(comp, field) else {
         return;
     };
-    if let Ok(mut s) = store().lock() {
-        s.entry(key).or_default().bool_val = val != 0;
-    }
+    with_entry(key, |v| v.bool_val = val != 0);
 }
 
 /// Baca nilai `boolean`; belum di-init → `0`.
@@ -89,13 +104,14 @@ pub unsafe extern "C" fn gn_state_get_bool(comp: *const c_char, field: *const c_
     let Some(key) = key_of(comp, field) else {
         return 0;
     };
-    store()
-        .lock()
-        .map(|s| i8::from(s.get(&key).is_some_and(|v| v.bool_val)))
-        .unwrap_or(0)
+    i8::from(
+        crate::intrinsics::locked(store())
+            .get(&key)
+            .is_some_and(|v| v.bool_val),
+    )
 }
 
-/// Tulis nilai `string` (pointer C string pool binary; null → diabaikan).
+/// Tulis nilai `string` (C string; disalin ke store; null → diabaikan).
 ///
 /// # Safety
 /// `comp`/`field`/`ptr` harus C string valid atau null (null → no-op).
@@ -111,16 +127,19 @@ pub unsafe extern "C" fn gn_state_set_str(
     let Some(key) = key_of(comp, field) else {
         return;
     };
-    if let Ok(mut s) = store().lock() {
-        s.entry(key).or_default().str_ptr = ptr as usize;
-    }
+    let text = crate::intrinsics::read_cstr(ptr, 0);
+    // Salin jadi CString milik store (interior NUL tak mungkin dari read_cstr).
+    let Ok(owned) = CString::new(text) else {
+        return;
+    };
+    with_entry(key, |v| v.str_val = Some(owned));
 }
 
 /// Baca nilai `string`; belum di-init → null.
 ///
 /// # Safety
 /// `comp`/`field` harus C string valid atau null (null → null).
-/// Pointer hasil milik pool binary (jangan di-free).
+/// Pointer hasil milik store (jangan di-free).
 #[no_mangle]
 pub unsafe extern "C" fn gn_state_get_str(
     comp: *const c_char,
@@ -129,13 +148,10 @@ pub unsafe extern "C" fn gn_state_get_str(
     let Some(key) = key_of(comp, field) else {
         return std::ptr::null();
     };
-    store()
-        .lock()
-        .map(|s| {
-            s.get(&key)
-                .map(|v| v.str_ptr as *const c_char)
-                .unwrap_or(std::ptr::null())
-        })
+    crate::intrinsics::locked(store())
+        .get(&key)
+        .and_then(|v| v.str_val.as_ref())
+        .map(|c| c.as_ptr())
         .unwrap_or(std::ptr::null())
 }
 
@@ -179,6 +195,24 @@ mod tests {
             gn_state_set_str(c.as_ptr(), f.as_ptr(), v.as_ptr());
             let got = gn_state_get_str(c.as_ptr(), f.as_ptr());
             assert_eq!(crate::intrinsics::read_cstr(got, 0), "halo");
+        }
+    }
+
+    #[test]
+    fn str_disalin_bukan_pointer_sumber() {
+        // P2-13: string di-copy; pointer sumber boleh mati, isi state tetap ada.
+        let (c, f) = key("T_OWN", "s");
+        let ptr = {
+            let tmp = CString::new("sementara").unwrap();
+            unsafe {
+                gn_state_set_str(c.as_ptr(), f.as_ptr(), tmp.as_ptr());
+            }
+            tmp.as_ptr()
+        }; // `tmp` di-drop → pointer sumber dangling
+        let _ = ptr; // hanya untuk menegaskan sumber tak dipakai lagi
+        unsafe {
+            let got = gn_state_get_str(c.as_ptr(), f.as_ptr());
+            assert_eq!(crate::intrinsics::read_cstr(got, 0), "sementara");
         }
     }
 

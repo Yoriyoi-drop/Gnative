@@ -28,7 +28,7 @@ const MAX_CSTR_LEN: usize = 4096;
 /// Ambil guard mutex, **pulih dari poison** (thread lain panik saat mengunci)
 /// alih-alih panic lintas batas FFI (UB/abort). Dipakai semua mutex runtime
 /// karena dipanggil dari `extern "C"` (jalur publik, dilarang panic).
-fn locked<T>(m: &'static Mutex<T>) -> std::sync::MutexGuard<'static, T> {
+pub(crate) fn locked<T>(m: &'static Mutex<T>) -> std::sync::MutexGuard<'static, T> {
     match m.lock() {
         Ok(g) => g,
         Err(poisoned) => {
@@ -487,7 +487,7 @@ mod tests {
         unsafe {
             let h = gn_window_create(c.as_ptr(), 4, 1024, 768);
             assert_eq!(h, HANDLE_MAIN);
-            let pending = pending_state().lock().unwrap();
+            let pending = locked(pending_state());
             assert_eq!(pending.as_ref().unwrap().0, "Halo");
             assert_eq!(pending.as_ref().unwrap().1, (1024, 768));
         }

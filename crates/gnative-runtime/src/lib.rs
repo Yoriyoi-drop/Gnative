@@ -12,6 +12,7 @@
 
 pub mod backend_select;
 pub mod event_loop;
+pub mod input;
 pub mod intrinsics;
 pub mod state_store;
 pub mod ui_builder;

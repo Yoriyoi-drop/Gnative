@@ -118,7 +118,8 @@ impl RenderBackend for WgpuRenderer {
                                 r: scene.clear.r as f64,
                                 g: scene.clear.g as f64,
                                 b: scene.clear.b as f64,
-                                a: 1.0,
+                                // P2-11: hormati alpha clear scene (dulu dipaksa 1.0).
+                                a: scene.clear.a as f64,
                             }),
                             store: wgpu::StoreOp::Store,
                         },
@@ -130,6 +131,14 @@ impl RenderBackend for WgpuRenderer {
                 });
                 pass.set_pipeline(&self.pipeline);
                 pass.set_bind_group(0, self.atlas.bind_group(), &[]);
+                // P2-11: batasi gambar ke area scene (clip ke ukuran target).
+                let sw = (scene.size.width.max(0.0) as u32)
+                    .min(self.surface.config.width)
+                    .max(1);
+                let sh = (scene.size.height.max(0.0) as u32)
+                    .min(self.surface.config.height)
+                    .max(1);
+                pass.set_scissor_rect(0, 0, sw, sh);
                 pass.set_vertex_buffer(0, buffer.slice(..));
                 pass.draw(0..vertices.len() as u32, 0..1);
             }
@@ -140,6 +149,10 @@ impl RenderBackend for WgpuRenderer {
         Ok(stats)
     }
 }
+
+/// Batas jumlah vertex per frame (P2-11) — cegah buffer raksasa/OOM pada
+/// scene ekstrem. Melebihi batas → sisa geometri diabaikan.
+const MAX_VERTICES: usize = 1_000_000;
 
 /// Bangun daftar vertex dari scene (2 segitiga per quad).
 fn build_vertices(scene: &Scene) -> (Vec<Vertex>, FrameStats) {
@@ -157,9 +170,13 @@ fn build_vertices(scene: &Scene) -> (Vec<Vertex>, FrameStats) {
 }
 
 fn push_node(node: &Node, w: f32, h: f32, out: &mut Vec<Vertex>) {
+    // P2-11: batasi total vertex (scene ekstrem tak boleh tumbuh tanpa batas).
+    if out.len() >= MAX_VERTICES {
+        return;
+    }
     match node {
         Node::Quad(quad) => {
-            push_quad(out, quad.rect, quad.color, w, h);
+            push_quad(out, quad.rect, quad.color, quad.radius, w, h);
         }
         Node::Text(item) => {
             // Teks nyata via atlas: satu quad ber-UV per glyph yang dikenal;
@@ -183,11 +200,12 @@ fn push_node(node: &Node, w: f32, h: f32, out: &mut Vec<Vertex>) {
     }
 }
 
-/// Push satu quad solid (mask atlas penuh).
+/// Push satu quad solid (mask atlas penuh) + radius sudut (P2-11).
 fn push_quad(
     out: &mut Vec<Vertex>,
     rect: gnative_core::Rect,
     color: gnative_core::Color,
+    radius: f32,
     w: f32,
     h: f32,
 ) {
@@ -201,6 +219,7 @@ fn push_quad(
         h,
         c,
         atlas::solid_uv(),
+        radius,
     ));
 }
 
@@ -224,6 +243,7 @@ fn push_text(out: &mut Vec<Vertex>, item: &gnative_gfx::scene::TextItem, w: f32,
             h,
             c,
             atlas::glyph_uv(index),
+            0.0,
         ));
     }
 }

@@ -225,15 +225,35 @@ fn place(node: &mut Node, x: f32, y: f32, avail_w: f32, _dir: StackDirection, _g
         }
         Node::Group(children) => {
             for c in children.iter_mut() {
-                offset_node(c, x, y);
+                place_relative(c, x, y, avail_w);
             }
         }
         Node::Action { inner, .. } => {
-            offset_node(inner, x, y);
+            place_relative(inner, x, y, avail_w);
         }
         Node::Stack(s) => {
             layout_nodes(&mut s.children, x, y, avail_w, s.direction, s.gap);
         }
+    }
+}
+
+/// Tempatkan anak yang koordinatnya **relatif** terhadap origin grup.
+///
+/// Node ber-layout (`Stack`) di-layout ulang di origin grup (P2-09: `Stack`
+/// di dalam `Group` sebelumnya hanya digeser, jadi tak pernah ter-layout);
+/// node lain cukup digeser agar offset relatifnya (mis. label `+6`) tetap utuh.
+fn place_relative(node: &mut Node, x: f32, y: f32, avail_w: f32) {
+    match node {
+        Node::Stack(s) => {
+            layout_nodes(&mut s.children, x, y, avail_w, s.direction, s.gap);
+        }
+        Node::Group(children) => {
+            for c in children.iter_mut() {
+                place_relative(c, x, y, avail_w);
+            }
+        }
+        Node::Action { inner, .. } => place_relative(inner, x, y, avail_w),
+        Node::Quad(_) | Node::Text(_) => offset_node(node, x, y),
     }
 }
 
@@ -273,28 +293,29 @@ impl Scene {
         x: f32,
         y: f32,
     ) -> Option<(String, String)> {
-        let mut hit: Option<(usize, String, String)> = None;
-        let mut stack: Vec<&Node> = self.nodes.iter().collect();
-        while let Some(node) = stack.pop() {
-            match node {
-                Node::Action { id, inner } => {
-                    if let Some(r) = bbox(inner) {
-                        if r.contains(Vec2::new(x, y)) {
-                            // Kunjungan LIFO: timpa agar yang paling atas
-                            // (terakhir di-build) menang bila overlap.
-                            if let Some((_, c, m)) = actions.iter().find(|(i, _, _)| i == id) {
-                                hit = Some((*id, c.clone(), m.clone()));
-                            }
-                        }
-                    }
-                    stack.push(inner);
-                }
-                Node::Group(children) => stack.extend(children.iter()),
-                Node::Stack(s) => stack.extend(s.children.iter()),
-                Node::Quad(_) | Node::Text(_) => {}
-            }
+        let pt = Vec2::new(x, y);
+        // P2-09: iterasi dari node paling atas (terakhir digambar) ke bawah
+        // sehingga aksi yang menimpa (overlap) menang — bukan node bawah.
+        let id = self.nodes.iter().rev().find_map(|n| hit_action(n, pt))?;
+        actions
+            .iter()
+            .find(|(i, _, _)| *i == id)
+            .map(|(_, c, m)| (c.clone(), m.clone()))
+    }
+}
+
+/// Aksi paling atas (terakhir digambar) di subtree `node` yang memuat `pt`.
+fn hit_action(node: &Node, pt: Vec2) -> Option<usize> {
+    match node {
+        Node::Action { id, inner } => {
+            // Aksi yang lebih dalam (digambar di atas isi) menang lebih dulu;
+            // bila tidak ada, aksi ini menang saat bbox-nya memuat titik.
+            hit_action(inner, pt).or_else(|| bbox(inner).filter(|r| r.contains(pt)).map(|_| *id))
         }
-        hit.map(|(_, c, m)| (c, m))
+        // Anak digambar berurutan → anak terakhir paling atas → telusuri mundur.
+        Node::Group(children) => children.iter().rev().find_map(|c| hit_action(c, pt)),
+        Node::Stack(s) => s.children.iter().rev().find_map(|c| hit_action(c, pt)),
+        Node::Quad(_) | Node::Text(_) => None,
     }
 }
 
@@ -391,5 +412,80 @@ mod tests {
             },
             other => panic!("node harus action, dapat {other:?}"),
         }
+    }
+
+    /// P2-09: aksi yang menimpa → node paling atas (terakhir) menang.
+    #[test]
+    fn overlap_aksi_atas_menang() {
+        let mk = |id: usize| Node::Action {
+            id,
+            inner: Box::new(Node::Quad(Quad::new(
+                Rect::new(0.0, 0.0, 100.0, 100.0),
+                Color::new(0.0, 0.0, 0.0, 1.0),
+            ))),
+        };
+        let scene = Scene {
+            size: Size::new(200.0, 200.0),
+            clear: Color::new(0.0, 0.0, 0.0, 1.0),
+            // id 1 digambar lebih dulu (bawah), id 2 di atas.
+            nodes: vec![mk(1), mk(2)],
+        };
+        let actions = vec![
+            (1usize, "A".to_string(), "a".to_string()),
+            (2usize, "B".to_string(), "b".to_string()),
+        ];
+        assert_eq!(
+            scene.action_at(&actions, 50.0, 50.0),
+            Some(("B".to_string(), "b".to_string())),
+            "aksi paling atas harus menang saat overlap"
+        );
+    }
+
+    /// P2-09: `Stack` di dalam `Group` harus ikut ter-layout.
+    #[test]
+    fn stack_dalam_group_ter_layout() {
+        let stack = Node::Stack(StackNode {
+            direction: StackDirection::Vertical,
+            gap: 4.0,
+            children: vec![
+                Node::Text(TextItem {
+                    rect: Rect::ZERO,
+                    text: "a".into(),
+                    font_size: 16.0,
+                    color: Color::new(1.0, 1.0, 1.0, 1.0),
+                }),
+                Node::Text(TextItem {
+                    rect: Rect::ZERO,
+                    text: "b".into(),
+                    font_size: 16.0,
+                    color: Color::new(1.0, 1.0, 1.0, 1.0),
+                }),
+            ],
+        });
+        let mut scene = Scene {
+            size: Size::new(400.0, 400.0),
+            clear: Color::new(0.0, 0.0, 0.0, 1.0),
+            nodes: vec![Node::Group(vec![stack])],
+        };
+        scene.layout();
+        let Node::Group(g) = &scene.nodes[0] else {
+            panic!("root harus group");
+        };
+        let Node::Stack(s) = &g[0] else {
+            panic!("anak harus stack");
+        };
+        let Node::Text(a) = &s.children[0] else {
+            panic!("anak stack harus teks");
+        };
+        let Node::Text(b) = &s.children[1] else {
+            panic!("anak stack harus teks");
+        };
+        assert!(a.rect.width > 0.0, "teks harus ter-layout: {a:?}");
+        assert!(
+            b.rect.y > a.rect.y,
+            "anak kedua harus di bawah anak pertama (a={:?}, b={:?})",
+            a.rect,
+            b.rect
+        );
     }
 }

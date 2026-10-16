@@ -13,6 +13,13 @@ use winit::window::Window;
 
 use crate::backend_select::select_backend;
 
+/// Log debug runtime — aktif bila `GNATIVE_VERBOSE` diset (P2-14).
+fn debug(msg: &str) {
+    if std::env::var_os("GNATIVE_VERBOSE").is_some() {
+        eprintln!("[gnative:debug] {msg}");
+    }
+}
+
 /// Scene default saat intrinsik tidak mengirim scene sendiri
 /// (window kosong + teks statis dari `gn_window_create`).
 fn default_scene(size: gnative_core::Size, title: &str) -> Scene {
@@ -38,16 +45,20 @@ fn default_scene(size: gnative_core::Size, title: &str) -> Scene {
 }
 
 /// Aplikasi native: window + backend render.
+///
+/// **Satuan konsisten (P2-08):** semua koordinat scene & hit-test memakai
+/// **piksel fisik** (sama seperti surface wgpu), bukan piksel logis.
 struct App {
     window: Option<Arc<Window>>,
     backend: Option<Box<dyn gnative_gfx::backend::RenderBackend>>,
     title: String,
+    /// Ukuran window (piksel fisik).
     size: gnative_core::Size,
     /// Scene dari binary `.gn` (None → `default_scene` placeholder).
     scene: Option<Scene>,
     /// Aksi klik `(id, komponen, method)` dari build terakhir.
     actions: Vec<(usize, String, String)>,
-    /// Posisi kursor terakhir (piksel logis).
+    /// Posisi kursor terakhir (piksel fisik).
     cursor: (f32, f32),
     initialized: bool,
 }
@@ -86,6 +97,13 @@ impl ApplicationHandler for App {
             }
         }
         self.window = Some(window.clone());
+        // Ukuran scene = ukuran fisik window saat ini, lalu layout ulang (P2-08).
+        let physical = window.inner_size();
+        self.size = gnative_core::Size::new(physical.width as f32, physical.height as f32);
+        if let Some(scene) = &mut self.scene {
+            scene.size = self.size;
+            scene.layout();
+        }
         window.request_redraw();
     }
 
@@ -95,64 +113,107 @@ impl ApplicationHandler for App {
         _window_id: winit::window::WindowId,
         event: WindowEvent,
     ) {
-        match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
+        // Satu window per aplikasi → `_window_id` boleh diabaikan (P2-12).
+        // Event lifecycle (butuh window/backend) ditangani langsung; sisanya
+        // dipetakan ke `gnative_core::event` lewat `input::map` (bisa diuji
+        // tanpa display — P2-12).
+        match &event {
+            WindowEvent::CloseRequested => {
+                event_loop.exit();
+                return;
+            }
             WindowEvent::Resized(size) => {
-                if let Some(backend) = &mut self.backend {
-                    let _ = backend.resize(gnative_core::Size::new(
-                        size.width as f32,
-                        size.height as f32,
-                    ));
-                }
+                self.apply_size(gnative_core::Size::new(
+                    size.width as f32,
+                    size.height as f32,
+                ));
+                return;
+            }
+            WindowEvent::ScaleFactorChanged { .. } => {
+                // HiDPI berubah → ukuran fisik berubah → layout ulang (P2-08/P2-12).
                 if let Some(window) = &self.window {
-                    window.request_redraw();
+                    let s = window.inner_size();
+                    self.apply_size(gnative_core::Size::new(s.width as f32, s.height as f32));
                 }
+                return;
             }
             WindowEvent::RedrawRequested => {
-                let Some(window) = &self.window else { return };
-                let Some(backend) = &mut self.backend else {
-                    return;
-                };
-                let size = window.inner_size();
-                // Pakai scene dari binary `.gn` bila ada, else placeholder.
-                let built_default;
-                let scene = match &self.scene {
-                    Some(s) => s,
-                    None => {
-                        built_default = default_scene(
-                            gnative_core::Size::new(size.width as f32, size.height as f32),
-                            &self.title,
-                        );
-                        &built_default
-                    }
-                };
-                if let Err(e) = backend.render_scene(scene) {
-                    eprintln!("[gnative] render gagal: {e}");
-                }
-                window.request_redraw();
-            }
-            WindowEvent::CursorMoved { position, .. } => {
-                // Simpan posisi logis untuk hit-test klik.
-                let scale = self
-                    .window
-                    .as_ref()
-                    .map(|w| w.scale_factor())
-                    .unwrap_or(1.0);
-                let logical = position.to_logical::<f64>(scale);
-                self.cursor = (logical.x as f32, logical.y as f32);
-            }
-            WindowEvent::MouseInput { state, button, .. } => {
-                use winit::event::{ElementState, MouseButton};
-                if state == ElementState::Pressed && button == MouseButton::Left {
-                    self.handle_click();
-                }
+                self.redraw();
+                return;
             }
             _ => {}
+        }
+
+        let cursor = gnative_core::Vec2::new(self.cursor.0, self.cursor.1);
+        if let Some(ev) = crate::input::map(&event, cursor) {
+            self.handle_input(ev);
         }
     }
 }
 
 impl App {
+    /// Render satu frame (dipanggil saat `RedrawRequested`).
+    ///
+    /// P2-07: tidak meminta redraw lagi → loop berhenti saat idle.
+    fn redraw(&mut self) {
+        let Some(window) = &self.window else { return };
+        let Some(backend) = &mut self.backend else {
+            return;
+        };
+        let size = window.inner_size();
+        // Pakai scene dari binary `.gn` bila ada, else placeholder.
+        let built_default;
+        let scene = match &self.scene {
+            Some(s) => s,
+            None => {
+                built_default = default_scene(
+                    gnative_core::Size::new(size.width as f32, size.height as f32),
+                    &self.title,
+                );
+                &built_default
+            }
+        };
+        if let Err(e) = backend.render_scene(scene) {
+            eprintln!("[gnative] render gagal: {e}");
+        }
+    }
+
+    /// Reaksi terhadap event input netral (`gnative_core::event`).
+    fn handle_input(&mut self, ev: gnative_core::event::Event) {
+        use gnative_core::event::{Event, KeyEvent, MouseEvent};
+        match ev {
+            Event::Mouse(MouseEvent::Moved { position }) => {
+                // Posisi sudah piksel fisik (P2-08).
+                self.cursor = (position.x, position.y);
+            }
+            Event::Mouse(MouseEvent::Pressed {
+                button: gnative_core::event::MouseButton::Left,
+                ..
+            }) => self.handle_click(),
+            Event::Mouse(MouseEvent::Wheel { .. }) => debug("mouse wheel belum didukung"),
+            Event::Key(KeyEvent::Pressed(_) | KeyEvent::Released(_)) => {
+                debug("keyboard input belum didukung")
+            }
+            Event::Mouse(_) | Event::Window(_) => {}
+        }
+    }
+
+    /// Terapkan ukuran window baru (piksel fisik): resize surface, simpan
+    /// ukuran, **layout ulang** scene (P2-08), lalu minta redraw (P2-07).
+    fn apply_size(&mut self, size: gnative_core::Size) {
+        if let Some(backend) = &mut self.backend {
+            let _ = backend.resize(size);
+        }
+        self.size = size;
+        if let Some(scene) = &mut self.scene {
+            scene.size = size;
+            scene.layout();
+        }
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
     /// Klik kiri: hit-test → panggil method → rebuild scene → redraw.
     fn handle_click(&mut self) {
         let (x, y) = self.cursor;

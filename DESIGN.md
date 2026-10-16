@@ -514,19 +514,20 @@ crates/gnative-gfx/src/frame.rs   → FrameStats
 
 crates/gnative-gfx-wgpu/src/device.rs   → Instance/Adapter/Device/Queue
 crates/gnative-gfx-wgpu/src/surface.rs  → Surface + config
-crates/gnative-gfx-wgpu/src/vertex.rs   → Vertex + layout (+ UV)
-crates/gnative-gfx-wgpu/src/shader.rs   → WGSL source (+ sample atlas)
+crates/gnative-gfx-wgpu/src/vertex.rs   → Vertex + layout (+ UV + geometri SDF; sanitasi NaN/Inf)
+crates/gnative-gfx-wgpu/src/shader.rs   → WGSL source (+ atlas + SDF sudut membulat)
 crates/gnative-gfx-wgpu/src/atlas.rs    → font 5x7 + tekstur atlas + UV
-crates/gnative-gfx-wgpu/src/renderer.rs → implementasi RenderBackend
+crates/gnative-gfx-wgpu/src/renderer.rs → implementasi RenderBackend (cap vertex, scissor, clear alpha)
 
 crates/gnative-gfx-cuda/src/lib.rs      → re-export
 crates/gnative-gfx-cuda/src/renderer.rs → implementasi RenderBackend (CUDA)
 
 crates/gnative-runtime/src/lib.rs           → init + re-export
-crates/gnative-runtime/src/event_loop.rs    → ApplicationHandler (winit 0.30)
+crates/gnative-runtime/src/event_loop.rs    → ApplicationHandler (winit 0.30) + redraw on-demand + relayout resize/HiDPI
+crates/gnative-runtime/src/input.rs         → pemetaan event winit → gnative_core::event (netral, bisa diuji)
 crates/gnative-runtime/src/backend_select.rs→ fallback chain wgpu→cuda
 crates/gnative-runtime/src/intrinsics.rs    → C-ABI gn_window_* + gn_scene_*
-crates/gnative-runtime/src/state_store.rs   → C-ABI gn_state_set/get_* (state komponen)
+crates/gnative-runtime/src/state_store.rs   → C-ABI gn_state_set/get_* (state komponen; string disalin, entri dibatasi)
 
 crates/gnative-cli/src/lib.rs        → run() CLI (+ flag global `--verbose`)
 crates/gnative-cli/src/log.rs        → log CLI berlevel (info/debug/warn/error)
