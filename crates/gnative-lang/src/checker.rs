@@ -18,6 +18,12 @@ pub struct Checker {
     interfaces: std::collections::HashMap<String, Vec<FieldDecl>>,
     /// komponen → nama tipe props.
     component_props: std::collections::HashMap<String, String>,
+    /// Nama konstanta global (`const x = ...`).
+    const_names: HashSet<String>,
+    /// Stack scope lokal. Setiap entri adalah satu blok (fungsi/method/komponen/
+    /// `if`/`for`/arrow). Variabel (`let`, param, state, loop-var) didaftarkan
+    /// di scope teratas; referensi ke nama tak dikenal dilaporkan sebagai error.
+    scopes: Vec<HashSet<String>>,
 }
 
 impl Checker {
@@ -33,7 +39,30 @@ impl Checker {
             function_names: HashSet::new(),
             interfaces: std::collections::HashMap::new(),
             component_props: std::collections::HashMap::new(),
+            const_names: HashSet::new(),
+            scopes: Vec::new(),
         }
+    }
+
+    // --- Manajemen scope lokal ---
+
+    fn scope_push(&mut self) {
+        self.scopes.push(HashSet::new());
+    }
+
+    fn scope_pop(&mut self) {
+        self.scopes.pop();
+    }
+
+    fn declare_local(&mut self, name: &str) {
+        if let Some(top) = self.scopes.last_mut() {
+            top.insert(name.to_string());
+        }
+    }
+
+    /// Nama dikenal sebagai variabel lokal (di scope manapun yang aktif).
+    fn is_known_local(&self, name: &str) -> bool {
+        self.scopes.iter().rev().any(|s| s.contains(name))
     }
 
     pub fn check(&self, module: &mut Module, out: &mut Vec<Diagnostic>) {
@@ -55,6 +84,9 @@ impl Checker {
                     }
                 }
                 Decl::Function(f) => checker.declare_function(&f.name, f.span, out),
+                Decl::Const(c) => {
+                    checker.const_names.insert(c.name.clone());
+                }
                 _ => {}
             }
         }
@@ -109,8 +141,10 @@ impl Checker {
         }
     }
 
-    /// Validasi fungsi top-level: tipe return + isi body.
-    fn check_function(&self, f: &FunctionDecl, out: &mut Vec<Diagnostic>) {
+    /// Validasi fungsi top-level: tipe return + isi body. Parameter
+    /// didaftarkan sebagai variabel lokal sehingga rujukan tak dikenal
+    /// terdeteksi (P0-02).
+    fn check_function(&mut self, f: &FunctionDecl, out: &mut Vec<Diagnostic>) {
         for p in &f.params {
             if let Some(t) = &p.ty {
                 self.check_type(t, out);
@@ -119,9 +153,14 @@ impl Checker {
         if let Some(ret) = &f.ret {
             self.check_type(ret, out);
         }
+        self.scope_push();
+        for p in &f.params {
+            self.declare_local(&p.name);
+        }
         for stmt in &f.body {
             self.check_stmt(stmt, out);
         }
+        self.scope_pop();
     }
 
     fn declare_component(
@@ -138,7 +177,7 @@ impl Checker {
         }
     }
 
-    fn check_component(&self, c: &ComponentDecl, out: &mut Vec<Diagnostic>) {
+    fn check_component(&mut self, c: &ComponentDecl, out: &mut Vec<Diagnostic>) {
         if let Some(props) = &c.props_type {
             if !self.type_names.contains(props) {
                 out.push(Diagnostic::error(
@@ -156,9 +195,37 @@ impl Checker {
             if let Some(ret) = &method.ret {
                 self.check_type(ret, out);
             }
+            // Scope method: param + field state (akses bare) + `props`/`this`.
+            self.scope_push();
+            for p in &method.params {
+                self.declare_local(&p.name);
+            }
+            for s in &c.state {
+                self.declare_local(&s.name);
+            }
+            if c.props_type.is_some() {
+                self.declare_local("props");
+            }
+            self.declare_local("this");
             for stmt in &method.body {
                 self.check_stmt(stmt, out);
             }
+            self.scope_pop();
+        }
+        // Body komponen tingkat atas (jika ada) — scope sama dengan method.
+        if !c.body.is_empty() {
+            self.scope_push();
+            for s in &c.state {
+                self.declare_local(&s.name);
+            }
+            if c.props_type.is_some() {
+                self.declare_local("props");
+            }
+            self.declare_local("this");
+            for stmt in &c.body {
+                self.check_stmt(stmt, out);
+            }
+            self.scope_pop();
         }
     }
 
@@ -207,7 +274,7 @@ impl Checker {
         }
     }
 
-    fn check_stmt(&self, stmt: &Stmt, out: &mut Vec<Diagnostic>) {
+    fn check_stmt(&mut self, stmt: &Stmt, out: &mut Vec<Diagnostic>) {
         match stmt {
             Stmt::Return(e, _) | Stmt::ExprStmt(e, _) => self.check_expr(e, out),
             Stmt::If {
@@ -217,40 +284,64 @@ impl Checker {
                 ..
             } => {
                 self.check_expr(cond, out);
-                for s in then_branch.iter().chain(else_branch) {
+                self.scope_push();
+                for s in then_branch {
                     self.check_stmt(s, out);
                 }
+                self.scope_pop();
+                self.scope_push();
+                for s in else_branch {
+                    self.check_stmt(s, out);
+                }
+                self.scope_pop();
             }
-            Stmt::For { iter, body, .. } => {
+            Stmt::For {
+                var, iter, body, ..
+            } => {
                 self.check_expr(iter, out);
+                self.scope_push();
+                self.declare_local(var);
                 for s in body {
                     self.check_stmt(s, out);
                 }
+                self.scope_pop();
             }
-            Stmt::Let { ty, init, .. } => {
+            Stmt::Let { name, ty, init, .. } => {
                 if let Some(t) = ty {
                     self.check_type(t, out);
                 }
                 if let Some(e) = init {
                     self.check_expr(e, out);
                 }
+                // Deklarasikan setelah mengecek init agar tidak memakai dirinya.
+                self.declare_local(name);
             }
         }
     }
 
-    fn check_expr(&self, e: &Expr, out: &mut Vec<Diagnostic>) {
+    fn check_expr(&mut self, e: &Expr, out: &mut Vec<Diagnostic>) {
         match e {
-            // Referensi `props` tanpa konteks → abaikan; nama lain yang jelas
-            // tidak dikenal akan dilaporkan bila dimulai huruf besar (tipe/komponen).
-            Expr::Ident(name, span)
-                if name.chars().next().is_some_and(|c| c.is_uppercase())
-                    && !self.component_names.contains(name)
-                    && !self.type_names.contains(name) =>
-            {
-                out.push(Diagnostic::error(
-                    *span,
-                    format!("nama `{name}` tidak dikenal"),
-                ));
+            // Referensi nama. Huruf besar = tipe/komponen; huruf kecil = variabel
+            // lokal / fungsi / `props` / `this`. Rujukan tak dikenal → error.
+            Expr::Ident(name, span) => {
+                let first_upper = name.chars().next().is_some_and(|c| c.is_uppercase());
+                if first_upper {
+                    if !self.component_names.contains(name) && !self.type_names.contains(name) {
+                        out.push(Diagnostic::error(
+                            *span,
+                            format!("nama `{name}` tidak dikenal"),
+                        ));
+                    }
+                } else if !(self.is_known_local(name)
+                    || self.function_names.contains(name)
+                    || self.const_names.contains(name)
+                    || matches!(name.as_str(), "props" | "this" | "puts"))
+                {
+                    out.push(Diagnostic::error(
+                        *span,
+                        format!("variabel `{name}` tidak dikenal"),
+                    ));
+                }
             }
             Expr::Element(el, _) => {
                 let tag = el.tag.clone();
@@ -297,6 +388,31 @@ impl Checker {
                     self.check_expr(a, out);
                 }
             }
+            Expr::Assign { target, value, .. } => {
+                self.check_expr(value, out);
+                // Target adalah variabel (lokal/state/const) atau member.
+                if let Expr::Ident(name, span) = target.as_ref() {
+                    let first_upper = name.chars().next().is_some_and(|c| c.is_uppercase());
+                    if first_upper {
+                        if !self.component_names.contains(name) && !self.type_names.contains(name) {
+                            out.push(Diagnostic::error(
+                                *span,
+                                format!("nama `{name}` tidak dikenal"),
+                            ));
+                        }
+                    } else if !(self.is_known_local(name)
+                        || self.const_names.contains(name)
+                        || matches!(name.as_str(), "props" | "this"))
+                    {
+                        out.push(Diagnostic::error(
+                            *span,
+                            format!("variabel `{name}` tidak dikenal"),
+                        ));
+                    }
+                } else {
+                    self.check_expr(target, out);
+                }
+            }
             Expr::BinOp { left, right, .. } => {
                 self.check_expr(left, out);
                 self.check_expr(right, out);
@@ -307,7 +423,12 @@ impl Checker {
                         self.check_type(t, out);
                     }
                 }
+                self.scope_push();
+                for p in params {
+                    self.declare_local(&p.name);
+                }
                 self.check_expr(body, out);
+                self.scope_pop();
             }
             Expr::Array(items, _) => {
                 for item in items {
@@ -545,5 +666,62 @@ mod tests {
         assert!(diags
             .iter()
             .any(|d| d.is_error() && d.message.contains("duplikat")));
+    }
+
+    // --- Regresi P0-02: scope simbol lokal ---
+
+    #[test]
+    fn variabel_tak_dikenal_di_fungsi_error() {
+        let src = "function f(): number { return x; }";
+        let (_, diags) = parse_source(src);
+        assert!(
+            diags
+                .iter()
+                .any(|d| d.is_error() && d.message.contains("x")),
+            "diagnostics: {diags:?}"
+        );
+    }
+
+    #[test]
+    fn variabel_tak_dikenal_di_method_error() {
+        let src = r#"
+            component C {
+                state { count: number = 0; }
+                render(): Element { return <text content={hilang} />; }
+            }
+        "#;
+        let (_, diags) = parse_source(src);
+        assert!(
+            diags
+                .iter()
+                .any(|d| d.is_error() && d.message.contains("hilang")),
+            "diagnostics: {diags:?}"
+        );
+    }
+
+    #[test]
+    fn props_dan_this_dikenal_di_komponen() {
+        let src = r#"
+            component C {
+                state { n: number = 0; }
+                render(): Element { return <text content={this.n} />; }
+            }
+        "#;
+        let (_, diags) = parse_source(src);
+        assert!(diags.is_empty(), "diagnostics: {diags:?}");
+    }
+
+    #[test]
+    fn let_terdaftar_dan_dipakai_bersih() {
+        let src = "function f(): number { let x: number = 1; return x; }";
+        let (_, diags) = parse_source(src);
+        assert!(diags.is_empty(), "diagnostics: {diags:?}");
+    }
+
+    #[test]
+    fn for_var_dikenal_di_body() {
+        let src = "function f(): number { let t: number = 0; for (n of [1, 2]) { t = t + n; } return t; }";
+        let (_, diags) = parse_source(src);
+        assert!(diags.is_empty(), "diagnostics: {diags:?}");
     }
 }

@@ -24,10 +24,7 @@ impl Parser {
         // Cek elemen TERAKHIR (bukan `any`) agar `Eof` tengah tidak menipu.
         let need_eof = !tokens.last().is_some_and(|t| t.is(&TokenKind::Eof));
         if need_eof {
-            tokens.push(Token::new(
-                TokenKind::Eof,
-                crate::span::Span::default(),
-            ));
+            tokens.push(Token::new(TokenKind::Eof, crate::span::Span::default()));
         }
         Self {
             tokens,
@@ -886,7 +883,9 @@ impl Parser {
     }
 
     fn at_eof(&self) -> bool {
-        self.tokens.get(self.pos).is_some_and(|t| t.is(&TokenKind::Eof))
+        self.tokens
+            .get(self.pos)
+            .is_some_and(|t| t.is(&TokenKind::Eof))
             || self.pos >= self.tokens.len()
     }
 
