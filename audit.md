@@ -257,9 +257,9 @@ Perbaikan: null-typing + error dinamis yang jelas. Tutup: matriks literal/ekspre
 **P2-05 Label/terminator divergen antar backend.** `cranelift.rs:482-499` Err vs
 `llvm.rs:393-403` bridge diam. Perbaikan: normalisasi MIR + satu aturan.
 Tutup: backend identik.
-**P2-06 Intrinsik selalu diimport; `len=0` diabaikan; intern O(n).**
+**P2-06 Intrinsik selalu di-`use`; `len=0` diabaikan; intern O(n).**
 `cranelift.rs:76-226,722`, `llvm.rs:224-277`, `mir_lower.rs:340`. Perbaikan:
-import selektif + pakai len + interner hash. Tutup: object fungsi murni bersih.
+use selektif + pakai len + interner hash. Tutup: object fungsi murni bersih.
 **P2-07 Busy redraw loop.** `runtime/event_loop.rs:111-133` render lalu
 `request_redraw` tanpa syarat vs `ControlFlow::Wait:215`. Idle 100% CPU/GPU.
 Perbaikan: redraw on-demand/dirty-flag. Tutup: idle tanpa submit berulang.
@@ -344,7 +344,7 @@ build gagal-jujur (tanpa binary = non-0), CUDA dinyatakan-belum-dukung
 aktifkan 4 test mati; corpus adversarial + fuzz lexer/parser/lower/IR;
 test span/unicode/escape; test resize/HiDPI/device-lost/OOM; test FFI
 poison/liar; test traversal; test cross-target + doctor-vs-linker.
-4. Optimasi yang boleh tunda (bukan blocker): intern O(n)→hash, import
+4. Optimasi yang boleh tunda (bukan blocker): intern O(n)→hash, use
 intrinsik selektif, buffer reuse/cap, debounce dev-watch, pesan bilingual
 (pilih satu + konsisten), radius/SDF, low-latency present mode.
 5. Dikeluarkan dari cakupan v1.0 (dokumentasikan jujur): CUDA penuh, registry/
@@ -375,7 +375,7 @@ fuzz 1 jam tanpa crash/hang tak terbatas.
 
 **Tahap 4 — artefak, instalasi, dokumen.**
 P0-06 (cache nyata), P0-09 (sanitasi path), P1-12/13 (build jujur + cross),
-P2-06/P3 (import selektif, dev debounce, pesan seragam), P1-16 selesai,
+P2-06/P3 (use selektif, dev debounce, pesan seragam), P1-16 selesai,
 strip/split-debug + ukuran/startup terdokumen, quickstart dari env bersih,
 selaraskan README/DESIGN/container.md/AGENTS/help. Acceptance: fresh-checkout
 → build gagal-jujur tanpa libruntime; dengan libruntime → binary + run manual.
@@ -560,4 +560,28 @@ changelog + checklist G. Tanpa itu, rilis apa pun harus bukan v1.0.0.
   `cargo fmt/clippy -D warnings` hijau; `cargo check --workspace` hijau.
 - Status P0-06: CLOSED (incremental kini benar-benar skip kerja; tak ada artefak
   basi lintas versi/flag/runtime — epoch dinaikkan bila ABI codegen berubah).
+
+### Iterasi 9 — P0-07/08 FFI aman (poison recovery + batas string/fungsi) (16 Okt 2026)
+
+- Masalah: 14× `.lock().expect` di `extern "C"` → panic lintas FFI bila mutex
+  poison (P0-07, UB/abort). `CStr::from_ptr` tanpa batas + `transmute(usize→fn)`
+  tanpa validasi (P0-08, OOB read / alamat liar). `state_store.rs` ikut pakai
+  `CStr::from_ptr` tak berbatas di `key_of`.
+- Perbaikan:
+  - `intrinsics.rs`: helper `locked()` memulihkan guard dari poison
+    (`into_inner`) alih-alih panic — dipakai di seluruh mutex runtime.
+  - `read_cstr(ptr, max_len)`: baca C string dengan batas eksplisit
+    (`max_len+1` bila len>0, else `MAX_CSTR_LEN`=4096); null → kosong,
+    tak ada NUL dalam batas → kosong (aman, tanpa OOB/UB). Menggantikan
+    `CStr::from_ptr` di semua `extern "C"`.
+  - `binary_fn(ptr)`: tolak `0`/null sebelum `transmute` → `Option<BinaryFn>`.
+  - `state_store.rs`: `key_of` pakai `read_cstr` (pub(crate)) berbatas.
+- Test: `lock_pulih_dari_poison` (thread panic saat lock → tak panic),
+  `read_cstr_null_dan_tak_terminated_aman` (null & tanpa-NUL aman),
+  `binary_fn_tolak_null`, `register_method_string_tak_terminated_tidak_panic`.
+  `cargo test -p gnative-runtime` 14 lolos; `cargo fmt/clippy -D warnings` hijau.
+- Status P0-07: CLOSED (tidak ada `expect/unwrap/panic` di jalur `extern "C"`;
+  poison pulih).
+- Status P0-08: CLOSED (semua FFI string berbatas + fn pointer divalidasi
+  null; sisa: fuzzer FFI ala P2 — lihat Tahap 3).
 

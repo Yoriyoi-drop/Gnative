@@ -211,7 +211,7 @@ fn collect_and_lower(project_dir: &Path, target: Option<&str>) -> GnResult<(Pars
             }
         }
 
-        // Resolusi import (package runtime tersedia setelah seed).
+        // Resolusi `use` (package runtime tersedia setelah seed).
         let imports: Vec<String> = module.imports.iter().map(|i| i.path.clone()).collect();
         let resolution = Resolver::resolve(&imports, &container, &src_dir)?;
         for missing in &resolution.missing {

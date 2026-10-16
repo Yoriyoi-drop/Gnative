@@ -13,7 +13,6 @@
 //! `extern "C"` dengan tipe primitif — tidak ada Rust type di batas ABI.
 
 use std::collections::HashMap;
-use std::ffi::CStr;
 use std::os::raw::c_char;
 use std::sync::{Mutex, OnceLock};
 
@@ -21,6 +20,58 @@ use gnative_core::{Color, Rect, Size};
 use gnative_gfx::scene::{Node, Quad, Scene, StackDirection, StackNode, TextItem};
 
 use crate::event_loop::run_app;
+
+/// Batas baca maksimum (byte) untuk string asing dari binary `.gn`. Mencegah
+/// OOB read bila pointer tak null-terminated (binary korup).
+const MAX_CSTR_LEN: usize = 4096;
+
+/// Ambil guard mutex, **pulih dari poison** (thread lain panik saat mengunci)
+/// alih-alih panic lintas batas FFI (UB/abort). Dipakai semua mutex runtime
+/// karena dipanggil dari `extern "C"` (jalur publik, dilarang panic).
+fn locked<T>(m: &'static Mutex<T>) -> std::sync::MutexGuard<'static, T> {
+    match m.lock() {
+        Ok(g) => g,
+        Err(poisoned) => {
+            eprintln!("[gnative] mutex poison — memulihkan state");
+            poisoned.into_inner()
+        }
+    }
+}
+
+/// Baca C string dari `ptr` dengan batas eksplisit `max_len` byte.
+///
+/// # Safety
+/// `ptr` adalah pointer asing dari binary; hanya dibaca hingga NUL pertama
+/// atau `max_len` (dibatasi `MAX_CSTR_LEN`). Null → string kosong; tak ada
+/// NUL dalam batas → string kosong (aman, tanpa OOB/UB).
+pub(crate) unsafe fn read_cstr(ptr: *const c_char, max_len: usize) -> String {
+    if ptr.is_null() {
+        return String::new();
+    }
+    // Codegen selalu kirim len=0 → pakai batas default. Bila len>0 (panjang
+    // string tanpa NUL), scan hingga len+1 agar terminator keikutkan.
+    let max = if max_len == 0 {
+        MAX_CSTR_LEN
+    } else {
+        (max_len + 1).min(MAX_CSTR_LEN)
+    };
+    let bytes = std::slice::from_raw_parts(ptr as *const u8, max);
+    match bytes.iter().position(|&b| b == 0) {
+        Some(n) => String::from_utf8_lossy(&bytes[..n]).into_owned(),
+        None => {
+            eprintln!("[gnative] string tak null-terminated dalam {max} byte");
+            String::new()
+        }
+    }
+}
+
+/// Transmute alamat fungsi binary (`usize`) ke `BinaryFn`; tolak null/0.
+unsafe fn binary_fn(ptr: usize) -> Option<BinaryFn> {
+    if ptr == 0 {
+        return None;
+    }
+    Some(std::mem::transmute::<usize, BinaryFn>(ptr))
+}
 
 /// Handle window (sederhana: index, karena satu window per aplikasi).
 pub type WindowHandle = i32;
@@ -46,12 +97,11 @@ pub unsafe extern "C" fn gn_window_create(
         return INVALID_HANDLE;
     }
     // String dari MIR dikirim sebagai C string (null-terminated) oleh codegen.
-    let title = unsafe { CStr::from_ptr(title_ptr) }
-        .to_string_lossy()
-        .into_owned();
+    // Dibaca dengan batas eksplisit (P0-08) — tidak mengandalkan len dikirim.
+    let title = unsafe { read_cstr(title_ptr, _title_len) };
     // Untuk milestone 0.7: window dibuka saat `gn_window_run` (event loop
     // butuh kontrol utama). Simpan konfigurasi global.
-    *pending_state().lock().expect("lock pending") = Some((title, (width, height)));
+    *locked(pending_state()) = Some((title, (width, height)));
     HANDLE_MAIN
 }
 
@@ -61,7 +111,7 @@ pub unsafe extern "C" fn gn_window_create(
 /// binary `.gn` belum membangun `Scene` via builder intrinsik.
 #[no_mangle]
 pub extern "C" fn gn_window_run(_handle: WindowHandle) -> i32 {
-    let pending = pending_state().lock().expect("lock pending").take();
+    let pending = locked(pending_state()).take();
     let (title, (width, height)) = pending.unwrap_or_else(|| ("Gnative".to_string(), (800, 600)));
     match run_app(&title, width.max(1), height.max(1), None) {
         Ok(()) => 0,
@@ -78,7 +128,7 @@ pub extern "C" fn gn_window_run(_handle: WindowHandle) -> i32 {
 /// Jalur statis (tanpa rebuild klik); kode baru memakai `gn_window_run_dynamic`.
 #[no_mangle]
 pub extern "C" fn gn_window_run_scene(_scene: WindowHandle) -> i32 {
-    let pending = pending_state().lock().expect("lock pending").take();
+    let pending = locked(pending_state()).take();
     let (title, (width, height)) = pending.unwrap_or_else(|| ("Gnative".to_string(), (800, 600)));
 
     // Ambil scene yang sudah dirakit builder.
@@ -113,8 +163,8 @@ pub unsafe extern "C" fn gn_window_run_dynamic(build: *const ()) -> i32 {
         eprintln!("[gnative] build fn null — batal");
         return 1;
     }
-    *build_fn().lock().expect("lock build") = Some(build as usize);
-    let pending = pending_state().lock().expect("lock pending").take();
+    *locked(build_fn()) = Some(build as usize);
+    let pending = locked(pending_state()).take();
     let (title, (width, height)) = pending.unwrap_or_else(|| ("Gnative".to_string(), (800, 600)));
 
     let size = Size::new(width.max(1) as f32, height.max(1) as f32);
@@ -142,16 +192,9 @@ pub unsafe extern "C" fn gn_register_method(
     if comp.is_null() || method.is_null() || func.is_null() {
         return;
     }
-    let c = unsafe { CStr::from_ptr(comp) }
-        .to_string_lossy()
-        .into_owned();
-    let m = unsafe { CStr::from_ptr(method) }
-        .to_string_lossy()
-        .into_owned();
-    methods()
-        .lock()
-        .expect("lock methods")
-        .insert((c, m), func as usize);
+    let c = unsafe { read_cstr(comp, 0) };
+    let m = unsafe { read_cstr(method, 0) };
+    locked(methods()).insert((c, m), func as usize);
 }
 
 /// Konfigurasi window yang dikirim `gn_window_create` sebelum `gn_window_run`.
@@ -204,7 +247,7 @@ type BinaryFn = extern "C" fn();
 
 /// Ambil hasil rakitan builder: node + aksi klik.
 fn take_built() -> (Vec<Node>, Vec<(usize, String, String)>) {
-    let mut b = scene_builder().lock().expect("lock builder");
+    let mut b = locked(scene_builder());
     match b.take() {
         Some(builder) => {
             // Root = kontainer pertama (build seimbang → satu-satunya).
@@ -223,8 +266,8 @@ fn take_built() -> (Vec<Node>, Vec<(usize, String, String)>) {
 /// Bangun ulang scene lewat fungsi build binary (dipakai frame awal dan
 /// setiap dispatch klik). Me-layout dengan `size`.
 pub(crate) fn rebuild_scene(size: Size) -> (Scene, Vec<(usize, String, String)>) {
-    if let Some(ptr) = build_fn().lock().expect("lock build").as_ref().copied() {
-        let f: BinaryFn = unsafe { std::mem::transmute(ptr) };
+    let ptr = locked(build_fn()).as_ref().copied().unwrap_or(0);
+    if let Some(f) = unsafe { binary_fn(ptr) } {
         f();
     }
     let (nodes, actions) = take_built();
@@ -240,10 +283,9 @@ pub(crate) fn rebuild_scene(size: Size) -> (Scene, Vec<(usize, String, String)>)
 /// Panggil method terregistrasi; `true` bila ditemukan (pemanggil lalu rebuild).
 pub(crate) fn call_method(comp: &str, method: &str) -> bool {
     let key = (comp.to_string(), method.to_string());
-    let ptr = methods().lock().expect("lock methods").get(&key).copied();
-    match ptr {
-        Some(p) => {
-            let f: BinaryFn = unsafe { std::mem::transmute(p) };
+    let ptr = locked(methods()).get(&key).copied().unwrap_or(0);
+    match unsafe { binary_fn(ptr) } {
+        Some(f) => {
             f();
             true
         }
@@ -257,7 +299,7 @@ const SCENE_HANDLE: WindowHandle = 1;
 /// Buat scene kosong; kembalikan handle.
 #[no_mangle]
 pub extern "C" fn gn_scene_create() -> WindowHandle {
-    let mut b = scene_builder().lock().expect("lock builder");
+    let mut b = locked(scene_builder());
     *b = Some(SceneBuilder {
         stack: vec![(0.0, Vec::new())],
         next_id: 0,
@@ -268,7 +310,7 @@ pub extern "C" fn gn_scene_create() -> WindowHandle {
 
 /// Tambah node ke kontainer aktif (paling atas tumpukan).
 fn push_node(node: Node) {
-    let mut b = scene_builder().lock().expect("lock builder");
+    let mut b = locked(scene_builder());
     if let Some(b) = b.as_mut() {
         if let Some((_, children)) = b.stack.last_mut() {
             children.push(node);
@@ -285,9 +327,7 @@ pub unsafe extern "C" fn gn_scene_add_text(_scene: WindowHandle, ptr: *const c_c
     if ptr.is_null() {
         return;
     }
-    let text = unsafe { CStr::from_ptr(ptr) }
-        .to_string_lossy()
-        .into_owned();
+    let text = unsafe { read_cstr(ptr, 0) };
     push_node(Node::Text(TextItem {
         rect: Rect::new(0.0, 0.0, 0.0, 0.0),
         text,
@@ -305,9 +345,7 @@ pub unsafe extern "C" fn gn_scene_add_button(_scene: WindowHandle, ptr: *const c
     if ptr.is_null() {
         return;
     }
-    let label = unsafe { CStr::from_ptr(ptr) }
-        .to_string_lossy()
-        .into_owned();
+    let label = unsafe { read_cstr(ptr, 0) };
     push_node(Node::Group(vec![
         Node::Quad(
             Quad::new(
@@ -342,16 +380,10 @@ pub unsafe extern "C" fn gn_scene_add_button_clickable(
     if ptr.is_null() || comp.is_null() || method.is_null() {
         return;
     }
-    let label = unsafe { CStr::from_ptr(ptr) }
-        .to_string_lossy()
-        .into_owned();
-    let c = unsafe { CStr::from_ptr(comp) }
-        .to_string_lossy()
-        .into_owned();
-    let m = unsafe { CStr::from_ptr(method) }
-        .to_string_lossy()
-        .into_owned();
-    let mut b = scene_builder().lock().expect("lock builder");
+    let label = unsafe { read_cstr(ptr, 0) };
+    let c = unsafe { read_cstr(comp, 0) };
+    let m = unsafe { read_cstr(method, 0) };
+    let mut b = locked(scene_builder());
     if let Some(b) = b.as_mut() {
         let id = b.next_id;
         b.next_id += 1;
@@ -389,9 +421,7 @@ pub unsafe extern "C" fn gn_scene_add_input(_scene: WindowHandle, ptr: *const c_
     if ptr.is_null() {
         return;
     }
-    let placeholder = unsafe { CStr::from_ptr(ptr) }
-        .to_string_lossy()
-        .into_owned();
+    let placeholder = unsafe { read_cstr(ptr, 0) };
     push_node(Node::Group(vec![
         Node::Quad(
             Quad::new(
@@ -412,7 +442,7 @@ pub unsafe extern "C" fn gn_scene_add_input(_scene: WindowHandle, ptr: *const c_
 /// Mulai `<vstack gap={n}>` — tekan kontainer baru ke tumpukan.
 #[no_mangle]
 pub extern "C" fn gn_scene_begin_vstack(_scene: WindowHandle, gap: f64) {
-    let mut b = scene_builder().lock().expect("lock builder");
+    let mut b = locked(scene_builder());
     if let Some(b) = b.as_mut() {
         b.stack.push((gap as f32, Vec::new()));
     }
@@ -421,7 +451,7 @@ pub extern "C" fn gn_scene_begin_vstack(_scene: WindowHandle, gap: f64) {
 /// Tutup `</vstack>` — keluarkan kontainer & bungkus jadi `StackNode`.
 #[no_mangle]
 pub extern "C" fn gn_scene_end_vstack(_scene: WindowHandle) {
-    let mut b = scene_builder().lock().expect("lock builder");
+    let mut b = locked(scene_builder());
     if let Some(b) = b.as_mut() {
         if b.stack.len() > 1 {
             let (gap, children) = b.stack.pop().expect("stack tidak kosong");
@@ -533,6 +563,62 @@ mod tests {
         #[test]
         fn method_tak_kenal_gagal() {
             assert!(!call_method("TakAda", "tak_ada"));
+        }
+    }
+
+    // --- Regresi P0-07 (poison) & P0-08 (string/null tak valid) ---
+
+    #[test]
+    fn lock_pulih_dari_poison() {
+        // Mutex di-poison oleh thread lain yang panik saat mengunci; `locked`
+        // harus memulihkan guard, bukan panic lintas FFI.
+        static M: OnceLock<Mutex<i32>> = OnceLock::new();
+        fn m() -> &'static Mutex<i32> {
+            M.get_or_init(|| Mutex::new(0))
+        }
+        let h = std::thread::spawn(|| {
+            let _g = m().lock().unwrap();
+            panic!("poison me");
+        });
+        let _ = h.join();
+        // Sekarang M poison — `locked` harus pulih tanpa panic.
+        let mut g = locked(m());
+        *g += 1;
+        assert_eq!(*g, 1);
+    }
+
+    #[test]
+    fn read_cstr_null_dan_tak_terminated_aman() {
+        // Null → string kosong, tak panic.
+        assert_eq!(unsafe { read_cstr(std::ptr::null(), 0) }, "");
+        // C string valid → isi sampai NUL.
+        let c = std::ffi::CString::new("Halo").unwrap();
+        assert_eq!(unsafe { read_cstr(c.as_ptr(), 0) }, "Halo");
+        // Buffer valid sepanjang batas tanpa NUL → string kosong (tidak OOB scan).
+        let buf = vec![b'X'; MAX_CSTR_LEN];
+        assert_eq!(unsafe { read_cstr(buf.as_ptr() as *const c_char, 0) }, "");
+    }
+
+    #[test]
+    fn binary_fn_tolak_null() {
+        assert!(unsafe { binary_fn(0) }.is_none());
+        extern "C" fn f() {}
+        let p = f as usize;
+        assert!(unsafe { binary_fn(p) }.is_some());
+    }
+
+    #[test]
+    fn register_method_string_tak_terminated_tidak_panic() {
+        // Pointer non-null tanpa NUL dalam batas → tak panic, tak crash (P0-08).
+        // Buffer sepanjang batas baca (asumsi pointer FFI valid sejauh itu).
+        extern "C" fn noop() {}
+        let mut buf = vec![b'A'; MAX_CSTR_LEN];
+        unsafe {
+            gn_register_method(
+                buf.as_ptr() as *const c_char,
+                buf.as_ptr() as *const c_char,
+                noop as *const (),
+            );
         }
     }
 }

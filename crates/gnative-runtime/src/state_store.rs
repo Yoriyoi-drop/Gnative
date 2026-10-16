@@ -9,7 +9,6 @@
 //! sepanjang proses, seperti `gn_scene_add_text`) — tidak di-copy.
 
 use std::collections::HashMap;
-use std::ffi::CStr;
 use std::os::raw::c_char;
 use std::sync::{Mutex, OnceLock};
 
@@ -28,16 +27,13 @@ fn store() -> &'static Mutex<HashMap<(String, String), StateVal>> {
 }
 
 /// Baca pasangan C string → `(komponen, field)`; `None` bila null.
-fn key_of(comp: *const c_char, field: *const c_char) -> Option<(String, String)> {
+/// Dibaca dengan batas eksplisit (P0-08) — tidak mengandalkan NUL tak terbatas.
+unsafe fn key_of(comp: *const c_char, field: *const c_char) -> Option<(String, String)> {
     if comp.is_null() || field.is_null() {
         return None;
     }
-    let c = unsafe { CStr::from_ptr(comp) }
-        .to_string_lossy()
-        .into_owned();
-    let f = unsafe { CStr::from_ptr(field) }
-        .to_string_lossy()
-        .into_owned();
+    let c = crate::intrinsics::read_cstr(comp, 0);
+    let f = crate::intrinsics::read_cstr(field, 0);
     Some((c, f))
 }
 
@@ -182,7 +178,7 @@ mod tests {
             assert!(gn_state_get_str(c.as_ptr(), f.as_ptr()).is_null());
             gn_state_set_str(c.as_ptr(), f.as_ptr(), v.as_ptr());
             let got = gn_state_get_str(c.as_ptr(), f.as_ptr());
-            assert_eq!(CStr::from_ptr(got).to_string_lossy(), "halo");
+            assert_eq!(crate::intrinsics::read_cstr(got, 0), "halo");
         }
     }
 

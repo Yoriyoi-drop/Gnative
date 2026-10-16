@@ -183,7 +183,7 @@ window App {
 
 | Fitur | Contoh |
 |---|---|
-| `use` / import | `use "@gnative/ui";` |
+| `use` / use | `use "@gnative/ui";` |
 | `function` | `function f(a: number): string { ... }` — params + return |
 | `let` | `let total: number = 0;` |
 | `if`/`else` | `if (count > 0) { ... } else { ... }` |
@@ -271,7 +271,7 @@ Native Binary (container/artifacts/<name>)
 | `mir.rs` | MIR: `MirModule`, `MirFunc`, `MirInst` (`Ptr`, `FuncAddr`, `CallIndirect`) |
 | `mir_lower.rs` | IR → MIR (window → build `__gn_build_scene` + `main` dinamis; string → pool; state per instance → `gn_state_*`; method tersalin `Comp__i__m`; klik → `gn_scene_add_button_clickable` + `gn_register_method`) |
 | `codegen/mod.rs` | dispatcher backend (Cranelift dev / LLVM release) |
-| `codegen/cranelift.rs` | MIR → object ELF via cranelift-codegen + cranelift-object (termasuk import `gn_state_*`/`gn_register_method`/`gn_window_run_dynamic`, `FuncAddr` + `CallIndirect`) |
+| `codegen/cranelift.rs` | MIR → object ELF via cranelift-codegen + cranelift-object (termasuk use `gn_state_*`/`gn_register_method`/`gn_window_run_dynamic`, `FuncAddr` + `CallIndirect`) |
 | `codegen/llvm.rs` | MIR → object via inkwell/LLVM 18 (optimasi agresif, multi-target): slot → alloca entry, CFG → basic block |
 | `linker.rs` | object `.gn` + libruntime → binary native via `cc` |
 | `pipeline.rs` | orkestrasi seluruh build (seed runtime, parse, IR/MIR, codegen, link) |

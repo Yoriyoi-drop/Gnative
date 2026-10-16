@@ -198,7 +198,7 @@ impl<'ctx, 'm> ModuleGen<'ctx, 'm> {
         }
     }
 
-    /// Deklarasikan import fungsi C-ABI (didefinisikan di libruntime/libc).
+    /// Deklarasikan `use` fungsi C-ABI (didefinisikan di libruntime/libc).
     fn declare_import(
         &mut self,
         name: &str,

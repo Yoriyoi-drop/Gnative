@@ -71,7 +71,7 @@ impl CodegenBackend for CraneliftBackend {
                 .map_err(|e| GnError::Other(format!("ObjectBuilder gagal: {e}")))?;
         let mut module = ObjectModule::new(obj_builder);
 
-        // 3. Intrinsik (import C-ABI dari libruntime + libc).
+        // 3. Intrinsik (`use` C-ABI dari libruntime + libc).
         let pointer = module.target_config().pointer_type();
         let puts_id = declare_import(
             &mut module,

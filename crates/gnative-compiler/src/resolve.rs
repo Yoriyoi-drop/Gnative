@@ -18,7 +18,7 @@ pub struct Resolution {
 pub struct Resolver;
 
 impl Resolver {
-    /// Cari file `.gn` untuk setiap import.
+    /// Cari file `.gn` untuk setiap `use`.
     ///
     /// - `@gnative/xxx` → `container/packages/@gnative/xxx`
     /// - `@project/xxx` → `container/packages/@project/xxx` (atau src/)
@@ -64,7 +64,7 @@ fn resolve_package(import: &str, container: &Path, src_dir: &Path) -> GnResult<P
         return Ok(local);
     }
     Err(GnError::Config(format!(
-        "import `{import}` tidak ditemukan (dicoba `{}`)",
+        "`use` `{import}` tidak ditemukan (dicoba `{}`)",
         local.display()
     )))
 }
