@@ -1,0 +1,60 @@
+[package]
+name = "gnative-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+gnative-core = { path = "../crates/gnative-core" }
+gnative-lang = { path = "../crates/gnative-lang" }
+gnative-compiler = { path = "../crates/gnative-compiler" }
+gnative-runtime = { path = "../crates/gnative-runtime" }
+gnative-gfx = { path = "../crates/gnative-gfx" }
+
+[[bin]]
+name = "fuzz_parse_source"
+path = "fuzz_targets/fuzz_parse_source.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_safe_join"
+path = "fuzz_targets/fuzz_safe_join.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_build_scene"
+path = "fuzz_targets/fuzz_build_scene.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_lower"
+path = "fuzz_targets/fuzz_lower.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_advisory"
+path = "fuzz_targets/fuzz_advisory.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_ffi_intrinsics"
+path = "fuzz_targets/fuzz_ffi_intrinsics.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
